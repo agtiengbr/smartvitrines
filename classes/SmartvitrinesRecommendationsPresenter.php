@@ -5,9 +5,9 @@ if (!defined('_PS_VERSION_')) {
 }
 
 use PrestaShop\PrestaShop\Adapter\Image\ImageRetriever;
+use PrestaShop\PrestaShop\Adapter\Presenter\Product\ProductListingPresenter;
 use PrestaShop\PrestaShop\Adapter\Product\PriceFormatter;
 use PrestaShop\PrestaShop\Adapter\Product\ProductColorsRetriever;
-use PrestaShop\PrestaShop\Core\Product\ProductListingPresenter;
 
 final class SmartvitrinesRecommendationsPresenter
 {
@@ -19,7 +19,7 @@ final class SmartvitrinesRecommendationsPresenter
     ) {}
 
     /**
-     * @param array<string, mixed> $product
+     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
@@ -27,10 +27,11 @@ final class SmartvitrinesRecommendationsPresenter
         string $publicKey,
         string $apiBaseUrl,
         string $skuField,
-        array $product,
+        array|\ArrayAccess $product,
         string $title,
     ): array {
         $empty = ['title' => $title, 'products' => []];
+        $product = $this->normalizeProduct($product);
 
         $currentProductId = (int) ($product['id_product'] ?? 0);
         $sku = $this->extractSku($skuField, $product);
@@ -69,6 +70,21 @@ final class SmartvitrinesRecommendationsPresenter
         return [
             'title' => $title,
             'products' => $this->presentProducts(array_values($productIds)),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeProduct(array|\ArrayAccess $product): array
+    {
+        return [
+            'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
+            'reference' => (string) ($product['reference'] ?? ''),
+            'ean13' => (string) ($product['ean13'] ?? ''),
+            'upc' => (string) ($product['upc'] ?? ''),
         ];
     }
 

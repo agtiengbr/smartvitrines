@@ -14,13 +14,16 @@ class smartvitrines extends Module
     public const CONFIG_SECRET_KEY = 'SMARTVITRINES_SECRET_KEY';
     public const CONFIG_API_URL = 'SMARTVITRINES_API_URL';
     public const CONFIG_SKU_FIELD = 'SMARTVITRINES_SKU_FIELD';
+    public const CONFIG_THEME_LAYOUT = 'SMARTVITRINES_THEME_LAYOUT';
+    public const THEME_LAYOUT_HUMMINGBIRD = 'hummingbird';
+    public const THEME_LAYOUT_CLASSIC = 'classic';
     public const RECOMMENDATIONS_LIMIT = 4;
 
     public function __construct()
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.1.0';
+        $this->version = '1.2.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -40,6 +43,7 @@ class smartvitrines extends Module
             && Configuration::updateValue(self::CONFIG_SECRET_KEY, '')
             && Configuration::updateValue(self::CONFIG_API_URL, '')
             && Configuration::updateValue(self::CONFIG_SKU_FIELD, 'reference')
+            && Configuration::updateValue(self::CONFIG_THEME_LAYOUT, self::THEME_LAYOUT_HUMMINGBIRD)
             && $this->registerHook('displayHeader')
             && $this->registerHook('displayFooterProduct')
             && $this->registerHook('displayOrderConfirmation');
@@ -51,6 +55,7 @@ class smartvitrines extends Module
             && Configuration::deleteByName(self::CONFIG_SECRET_KEY)
             && Configuration::deleteByName(self::CONFIG_API_URL)
             && Configuration::deleteByName(self::CONFIG_SKU_FIELD)
+            && Configuration::deleteByName(self::CONFIG_THEME_LAYOUT)
             && parent::uninstall();
     }
 
@@ -63,6 +68,7 @@ class smartvitrines extends Module
             $secretKey = trim((string) Tools::getValue(self::CONFIG_SECRET_KEY));
             $apiUrl = rtrim(trim((string) Tools::getValue(self::CONFIG_API_URL)), '/');
             $skuField = trim((string) Tools::getValue(self::CONFIG_SKU_FIELD));
+            $themeLayout = (string) Tools::getValue(self::CONFIG_THEME_LAYOUT);
 
             if ($publicKey === '' || $secretKey === '') {
                 $output .= $this->displayError($this->l('Public Key e Secret Key são obrigatórios.'));
@@ -71,6 +77,10 @@ class smartvitrines extends Module
                 Configuration::updateValue(self::CONFIG_SECRET_KEY, $secretKey);
                 Configuration::updateValue(self::CONFIG_API_URL, $apiUrl);
                 Configuration::updateValue(self::CONFIG_SKU_FIELD, $skuField !== '' ? $skuField : 'reference');
+                Configuration::updateValue(
+                    self::CONFIG_THEME_LAYOUT,
+                    $this->normalizeThemeLayout($themeLayout),
+                );
                 $output .= $this->displayConfirmation($this->l('Configurações salvas.'));
             }
         }
@@ -104,7 +114,12 @@ class smartvitrines extends Module
     public function hookDisplayFooterProduct(array $params): string
     {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
-        if ($publicKey === '' || !isset($params['product']) || !is_array($params['product'])) {
+        $product = $params['product'] ?? null;
+        if (
+            $publicKey === ''
+            || $product === null
+            || (!is_array($product) && !$product instanceof \ArrayAccess)
+        ) {
             return '';
         }
 
@@ -113,7 +128,7 @@ class smartvitrines extends Module
             publicKey: $publicKey,
             apiBaseUrl: $this->getApiBaseUrl(),
             skuField: (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference'),
-            product: $params['product'],
+            product: $product,
             title: $this->l('Você também pode se interessar por:'),
         );
 
@@ -126,7 +141,27 @@ class smartvitrines extends Module
             'smartvitrines_title' => $result['title'],
         ]);
 
-        return $this->display(__FILE__, 'views/templates/hook/product-recommendations.tpl');
+        return $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+    }
+
+    private function getRecommendationsTemplatePath(): string
+    {
+        return match ($this->getThemeLayout()) {
+            self::THEME_LAYOUT_CLASSIC => 'views/templates/hook/product-recommendations-classic.tpl',
+            default => 'views/templates/hook/product-recommendations-hummingbird.tpl',
+        };
+    }
+
+    private function getThemeLayout(): string
+    {
+        return $this->normalizeThemeLayout((string) Configuration::get(self::CONFIG_THEME_LAYOUT));
+    }
+
+    private function normalizeThemeLayout(string $layout): string
+    {
+        return $layout === self::THEME_LAYOUT_CLASSIC
+            ? self::THEME_LAYOUT_CLASSIC
+            : self::THEME_LAYOUT_HUMMINGBIRD;
     }
 
     /**
@@ -235,6 +270,26 @@ class smartvitrines extends Module
                             'name' => 'name',
                         ],
                     ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Layout das recomendações'),
+                        'name' => self::CONFIG_THEME_LAYOUT,
+                        'desc' => $this->l('Escolha o markup compatível com o tema ativo da loja.'),
+                        'options' => [
+                            'query' => [
+                                [
+                                    'id' => self::THEME_LAYOUT_HUMMINGBIRD,
+                                    'name' => $this->l('Hummingbird (module-products)'),
+                                ],
+                                [
+                                    'id' => self::THEME_LAYOUT_CLASSIC,
+                                    'name' => $this->l('Classic (product-accessories)'),
+                                ],
+                            ],
+                            'id' => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Salvar'),
@@ -257,6 +312,7 @@ class smartvitrines extends Module
             self::CONFIG_SECRET_KEY => Configuration::get(self::CONFIG_SECRET_KEY),
             self::CONFIG_API_URL => Configuration::get(self::CONFIG_API_URL),
             self::CONFIG_SKU_FIELD => Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference',
+            self::CONFIG_THEME_LAYOUT => $this->getThemeLayout(),
         ];
 
         return $helper->generateForm([$fieldsForm]);

@@ -1,5 +1,5 @@
 {**
- * SmartVitrines — recomendações na PDP (mesmo layout dos acessórios / module-products).
+ * SmartVitrines — recomendações na PDP (layout Hummingbird / module-products).
  *}
 {extends file='components/module-products.tpl'}
 

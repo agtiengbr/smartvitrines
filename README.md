@@ -17,6 +17,7 @@ Compatível com **PrestaShop 1.7.x a 9**.
    - **Secret Key** — mesma `sk_live_...` do tenant
    - **API URL** — vazio para produção; dev: `http://host.docker.internal:18080`
    - **Campo SKU** — alinhado ao tenant (`reference`, `ean13`, `upc`)
+   - **Layout das recomendações** — `Hummingbird` ou `Classic` (switch no BO)
 
 4. Cadastre no tenant SmartVitrines:
    - `platform_url` = URL base da loja (também usada para CORS no browser)
@@ -47,6 +48,13 @@ Resposta JSON: `id_pedido`, `data`, `total`, `items[]`.
 ## Recomendações na página do produto
 
 Hook: `displayFooterProduct` — bloco **"Você também pode se interessar por:"** (traduzível via `$this->l()`).
+
+**Layout (configurável no BO):**
+
+| Opção | Tema | Markup |
+|---|---|---|
+| Hummingbird | `hummingbird` | `components/module-products.tpl` (igual acessórios HB) |
+| Classic | `classic` | `product-accessories` + grid `row` (igual acessórios Classic) |
 
 - Consulta `GET /v1/recommendations` no PHP (não usa SDK no browser)
 - Resolve SKUs → produtos PrestaShop (`reference` / `ean13` / `upc`)

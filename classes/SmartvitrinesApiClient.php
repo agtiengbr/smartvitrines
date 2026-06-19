@@ -15,15 +15,19 @@ final class SmartvitrinesApiClient
      */
     public function getRecommendations(string $publicKey, string $sku, int $limit = 4): array
     {
-        if ($publicKey === '' || $sku === '') {
+        if ($publicKey === '') {
             return [];
         }
 
-        $url = rtrim($this->apiBaseUrl, '/') . '/v1/recommendations?' . http_build_query([
+        $query = [
             'public_key' => $publicKey,
-            'sku' => $sku,
             'limit' => max(1, $limit),
-        ]);
+        ];
+        if ($sku !== '') {
+            $query['sku'] = $sku;
+        }
+
+        $url = rtrim($this->apiBaseUrl, '/') . '/v1/recommendations?' . http_build_query($query);
 
         $body = $this->httpGet($url);
         if ($body === null) {
