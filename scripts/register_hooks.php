@@ -30,8 +30,8 @@ if (!$module) {
     exit(1);
 }
 
-$register = ['displayOrderConfirmation'];
-$unregister = ['actionValidateOrder', 'displayFooterProduct'];
+$register = ['displayOrderConfirmation', 'displayFooterProduct'];
+$unregister = ['actionValidateOrder'];
 
 foreach ($register as $hook) {
     echo ($module->registerHook($hook) ? 'OK' : 'FAIL') . " registerHook({$hook})\n";

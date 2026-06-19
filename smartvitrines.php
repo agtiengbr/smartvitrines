@@ -5,6 +5,8 @@ if (!defined('_PS_VERSION_')) {
 }
 
 require_once dirname(__FILE__) . '/classes/SmartvitrinesOrderExporter.php';
+require_once dirname(__FILE__) . '/classes/SmartvitrinesApiClient.php';
+require_once dirname(__FILE__) . '/classes/SmartvitrinesRecommendationsPresenter.php';
 
 class smartvitrines extends Module
 {
@@ -12,12 +14,13 @@ class smartvitrines extends Module
     public const CONFIG_SECRET_KEY = 'SMARTVITRINES_SECRET_KEY';
     public const CONFIG_API_URL = 'SMARTVITRINES_API_URL';
     public const CONFIG_SKU_FIELD = 'SMARTVITRINES_SKU_FIELD';
+    public const RECOMMENDATIONS_LIMIT = 4;
 
     public function __construct()
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.0.0';
+        $this->version = '1.1.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -38,6 +41,7 @@ class smartvitrines extends Module
             && Configuration::updateValue(self::CONFIG_API_URL, '')
             && Configuration::updateValue(self::CONFIG_SKU_FIELD, 'reference')
             && $this->registerHook('displayHeader')
+            && $this->registerHook('displayFooterProduct')
             && $this->registerHook('displayOrderConfirmation');
     }
 
@@ -90,6 +94,39 @@ class smartvitrines extends Module
         ]);
 
         return $this->display(__FILE__, 'views/templates/hook/header.tpl');
+    }
+
+    /**
+     * Bloco de recomendações na página do produto (renderização server-side).
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookDisplayFooterProduct(array $params): string
+    {
+        $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
+        if ($publicKey === '' || !isset($params['product']) || !is_array($params['product'])) {
+            return '';
+        }
+
+        $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
+        $result = $presenter->present(
+            publicKey: $publicKey,
+            apiBaseUrl: $this->getApiBaseUrl(),
+            skuField: (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference'),
+            product: $params['product'],
+            title: $this->l('Você também pode se interessar por:'),
+        );
+
+        if ($result['products'] === []) {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'smartvitrines_products' => $result['products'],
+            'smartvitrines_title' => $result['title'],
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/product-recommendations.tpl');
     }
 
     /**

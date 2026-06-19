@@ -40,8 +40,19 @@ Resposta JSON: `id_pedido`, `data`, `total`, `items[]`.
 ## Fluxo
 
 1. SDK (hook `displayHeader`) registra views na API
-2. Checkout (`actionValidateOrder`) envia `session_id` + `order_ref` → `POST /v1/events/conversion`
+2. Confirmação do pedido (`displayOrderConfirmation`) dispara conversão via SDK
 3. Worker SmartVitrines puxa pedido no endpoint acima e incrementa a matriz
+4. PDP (hook `displayFooterProduct`) exibe até **4** recomendações renderizadas no servidor (mesmo layout dos acessórios no tema Hummingbird)
+
+## Recomendações na página do produto
+
+Hook: `displayFooterProduct` — bloco **"Você também pode se interessar por:"** (traduzível via `$this->l()`).
+
+- Consulta `GET /v1/recommendations` no PHP (não usa SDK no browser)
+- Resolve SKUs → produtos PrestaShop (`reference` / `ean13` / `upc`)
+- Apresenta com `ProductListingPresenter` (miniaturas iguais aos acessórios)
+
+**API URL** no BO deve ser acessível **do container/servidor PHP da loja** (ex.: `http://host.docker.internal:18080` em Docker WSL, não `localhost` do host).
 
 ## Teste manual do endpoint
 
