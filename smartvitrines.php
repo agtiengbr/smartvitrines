@@ -23,7 +23,7 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.2.0';
+        $this->version = '1.2.1';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -36,7 +36,7 @@ class smartvitrines extends Module
         $this->confirmUninstall = $this->l('Remover configurações SmartVitrines?');
     }
 
-    public function install(): bool
+    public function install()
     {
         return parent::install()
             && Configuration::updateValue(self::CONFIG_PUBLIC_KEY, '')
@@ -49,7 +49,7 @@ class smartvitrines extends Module
             && $this->registerHook('displayOrderConfirmation');
     }
 
-    public function uninstall(): bool
+    public function uninstall()
     {
         return Configuration::deleteByName(self::CONFIG_PUBLIC_KEY)
             && Configuration::deleteByName(self::CONFIG_SECRET_KEY)
@@ -59,7 +59,7 @@ class smartvitrines extends Module
             && parent::uninstall();
     }
 
-    public function getContent(): string
+    public function getContent()
     {
         $output = '';
 
@@ -79,7 +79,7 @@ class smartvitrines extends Module
                 Configuration::updateValue(self::CONFIG_SKU_FIELD, $skuField !== '' ? $skuField : 'reference');
                 Configuration::updateValue(
                     self::CONFIG_THEME_LAYOUT,
-                    $this->normalizeThemeLayout($themeLayout),
+                    $this->normalizeThemeLayout($themeLayout)
                 );
                 $output .= $this->displayConfirmation($this->l('Configurações salvas.'));
             }
@@ -88,7 +88,7 @@ class smartvitrines extends Module
         return $output . $this->renderConfigForm();
     }
 
-    public function hookDisplayHeader(array $params): string
+    public function hookDisplayHeader($params)
     {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
         if ($publicKey === '') {
@@ -110,7 +110,7 @@ class smartvitrines extends Module
      *
      * @param array<string, mixed> $params
      */
-    public function hookDisplayFooterProduct(array $params): string
+    public function hookDisplayFooterProduct($params)
     {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
         $product = $params['product'] ?? null;
@@ -124,11 +124,11 @@ class smartvitrines extends Module
 
         $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
         $result = $presenter->present(
-            publicKey: $publicKey,
-            apiBaseUrl: $this->getApiBaseUrl(),
-            skuField: (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference'),
-            product: $product,
-            title: $this->l('Você também pode se interessar por:'),
+            $publicKey,
+            $this->getApiBaseUrl(),
+            (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference'),
+            $product,
+            $this->l('Você também pode se interessar por:')
         );
 
         if ($result['products'] === []) {
@@ -143,20 +143,21 @@ class smartvitrines extends Module
         return $this->display(__FILE__, $this->getRecommendationsTemplatePath());
     }
 
-    private function getRecommendationsTemplatePath(): string
+    private function getRecommendationsTemplatePath()
     {
-        return match ($this->getThemeLayout()) {
-            self::THEME_LAYOUT_CLASSIC => 'views/templates/hook/product-recommendations-classic.tpl',
-            default => 'views/templates/hook/product-recommendations-hummingbird.tpl',
-        };
+        if ($this->getThemeLayout() === self::THEME_LAYOUT_CLASSIC) {
+            return 'views/templates/hook/product-recommendations-classic.tpl';
+        }
+
+        return 'views/templates/hook/product-recommendations-hummingbird.tpl';
     }
 
-    private function getThemeLayout(): string
+    private function getThemeLayout()
     {
         return $this->normalizeThemeLayout((string) Configuration::get(self::CONFIG_THEME_LAYOUT));
     }
 
-    private function normalizeThemeLayout(string $layout): string
+    private function normalizeThemeLayout($layout)
     {
         return $layout === self::THEME_LAYOUT_CLASSIC
             ? self::THEME_LAYOUT_CLASSIC
@@ -168,7 +169,7 @@ class smartvitrines extends Module
      *
      * @param array<string, mixed> $params
      */
-    public function hookDisplayOrderConfirmation(array $params): string
+    public function hookDisplayOrderConfirmation($params)
     {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
         if ($publicKey === '') {
@@ -189,7 +190,7 @@ class smartvitrines extends Module
         return $this->display(__FILE__, 'views/templates/hook/order-confirmation.tpl');
     }
 
-    public function validateWorkerAuth(): bool
+    public function validateWorkerAuth()
     {
         $secret = (string) Configuration::get(self::CONFIG_SECRET_KEY);
         if ($secret === '') {
@@ -207,7 +208,7 @@ class smartvitrines extends Module
     /**
      * @return array<string, mixed>|null
      */
-    public function buildOrderPayload(int $orderId): ?array
+    public function buildOrderPayload($orderId)
     {
         $exporter = new SmartvitrinesOrderExporter(
             (string) Configuration::get(self::CONFIG_SKU_FIELD)
@@ -216,7 +217,7 @@ class smartvitrines extends Module
         return $exporter->export($orderId);
     }
 
-    public function getApiBaseUrl(): string
+    public function getApiBaseUrl()
     {
         $configured = rtrim(trim((string) Configuration::get(self::CONFIG_API_URL)), '/');
         if ($configured !== '') {
@@ -226,12 +227,12 @@ class smartvitrines extends Module
         return 'https://api.analytics.agti.eng.br';
     }
 
-    public function getSdkScriptUrl(): string
+    public function getSdkScriptUrl()
     {
         return 'https://analytics.agti.eng.br/v1/sdk.min.js';
     }
 
-    private function renderConfigForm(): string
+    private function renderConfigForm()
     {
         $fieldsForm = [
             'form' => [

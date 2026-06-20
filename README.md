@@ -1,6 +1,6 @@
 # Módulo PrestaShop SmartVitrines
 
-Compatível com **PrestaShop 1.7.x a 9**.
+Compatível com **PrestaShop 1.7.x a 9** e **PHP 7.4+** (requisito mínimo do PS 1.7).
 
 ## Instalação
 

@@ -6,15 +6,20 @@ if (!defined('_PS_VERSION_')) {
 
 final class SmartvitrinesOrderExporter
 {
-    public function __construct(
-        private string $skuField = 'reference',
-    ) {}
+    /** @var string */
+    private $skuField;
+
+    public function __construct($skuField = 'reference')
+    {
+        $this->skuField = (string) $skuField;
+    }
 
     /**
      * @return array<string, mixed>|null
      */
-    public function export(int $orderId): ?array
+    public function export($orderId)
     {
+        $orderId = (int) $orderId;
         $order = new Order($orderId);
         if (!Validate::isLoadedObject($order)) {
             return null;
@@ -60,12 +65,15 @@ final class SmartvitrinesOrderExporter
         ];
     }
 
-    private function resolveSku(Product $product): string
+    private function resolveSku(Product $product)
     {
-        return match ($this->skuField) {
-            'ean13' => (string) ($product->ean13 ?: $product->reference),
-            'upc' => (string) ($product->upc ?: $product->reference),
-            default => (string) $product->reference,
-        };
+        switch ($this->skuField) {
+            case 'ean13':
+                return (string) ($product->ean13 ?: $product->reference);
+            case 'upc':
+                return (string) ($product->upc ?: $product->reference);
+            default:
+                return (string) $product->reference;
+        }
     }
 }

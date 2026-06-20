@@ -14,33 +14,32 @@ final class SmartvitrinesRecommendationsPresenter
     private const DISPLAY_LIMIT = 4;
     private const API_FETCH_LIMIT = 12;
 
-    public function __construct(
-        private Context $context,
-    ) {}
+    /** @var Context */
+    private $context;
+
+    public function __construct(Context $context)
+    {
+        $this->context = $context;
+    }
 
     /**
      * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
-    public function present(
-        string $publicKey,
-        string $apiBaseUrl,
-        string $skuField,
-        array|\ArrayAccess $product,
-        string $title,
-    ): array {
-        $empty = ['title' => $title, 'products' => []];
+    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title)
+    {
+        $empty = ['title' => (string) $title, 'products' => []];
         $product = $this->normalizeProduct($product);
 
         $currentProductId = (int) ($product['id_product'] ?? 0);
-        $sku = $this->extractSku($skuField, $product);
+        $sku = $this->extractSku((string) $skuField, $product);
         if ($sku === '') {
             return $empty;
         }
 
         $client = new SmartvitrinesApiClient($apiBaseUrl);
-        $recommendedSkus = $client->getRecommendations($publicKey, $sku, self::API_FETCH_LIMIT);
+        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, self::API_FETCH_LIMIT);
         if ($recommendedSkus === []) {
             return $empty;
         }
@@ -51,7 +50,7 @@ final class SmartvitrinesRecommendationsPresenter
                 break;
             }
 
-            $id = $this->resolveProductId($skuField, $recommendedSku);
+            $id = $this->resolveProductId((string) $skuField, $recommendedSku);
             if ($id <= 0 || $id === $currentProductId || isset($productIds[$id])) {
                 continue;
             }
@@ -68,7 +67,7 @@ final class SmartvitrinesRecommendationsPresenter
         }
 
         return [
-            'title' => $title,
+            'title' => (string) $title,
             'products' => $this->presentProducts(array_values($productIds)),
         ];
     }
@@ -78,7 +77,7 @@ final class SmartvitrinesRecommendationsPresenter
      *
      * @return array<string, mixed>
      */
-    private function normalizeProduct(array|\ArrayAccess $product): array
+    private function normalizeProduct($product)
     {
         return [
             'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
@@ -91,26 +90,33 @@ final class SmartvitrinesRecommendationsPresenter
     /**
      * @param array<string, mixed> $product
      */
-    private function extractSku(string $skuField, array $product): string
+    private function extractSku($skuField, array $product)
     {
-        return match ($skuField) {
-            'ean13' => trim((string) ($product['ean13'] ?? '')),
-            'upc' => trim((string) ($product['upc'] ?? '')),
-            default => trim((string) ($product['reference'] ?? '')),
-        };
+        switch ($skuField) {
+            case 'ean13':
+                return trim((string) ($product['ean13'] ?? ''));
+            case 'upc':
+                return trim((string) ($product['upc'] ?? ''));
+            default:
+                return trim((string) ($product['reference'] ?? ''));
+        }
     }
 
-    private function resolveProductId(string $skuField, string $sku): int
+    private function resolveProductId($skuField, $sku)
     {
-        return match ($skuField) {
-            'ean13' => (int) Product::getIdByEan13($sku),
-            'upc' => $this->resolveProductIdByUpc($sku),
-            default => (int) Product::getIdByReference($sku),
-        };
+        switch ($skuField) {
+            case 'ean13':
+                return (int) Product::getIdByEan13($sku);
+            case 'upc':
+                return $this->resolveProductIdByUpc($sku);
+            default:
+                return (int) Product::getIdByReference($sku);
+        }
     }
 
-    private function resolveProductIdByUpc(string $upc): int
+    private function resolveProductIdByUpc($upc)
     {
+        $upc = (string) $upc;
         if ($upc === '') {
             return 0;
         }
@@ -124,8 +130,9 @@ final class SmartvitrinesRecommendationsPresenter
         return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
 
-    private function isVisibleProduct(int $productId): bool
+    private function isVisibleProduct($productId)
     {
+        $productId = (int) $productId;
         $product = new Product($productId, false, (int) $this->context->language->id);
         if (!Validate::isLoadedObject($product) || !$product->active) {
             return false;
@@ -139,7 +146,7 @@ final class SmartvitrinesRecommendationsPresenter
      *
      * @return list<array<string, mixed>>
      */
-    private function presentProducts(array $productIds): array
+    private function presentProducts(array $productIds)
     {
         $assembler = new ProductAssembler($this->context);
         $presenterFactory = new ProductPresenterFactory($this->context);
@@ -151,7 +158,7 @@ final class SmartvitrinesRecommendationsPresenter
             $this->context->link,
             new PriceFormatter(),
             new ProductColorsRetriever(),
-            $this->context->getTranslator(),
+            $this->context->getTranslator()
         );
 
         $rawProducts = [];
@@ -165,7 +172,7 @@ final class SmartvitrinesRecommendationsPresenter
             $presented[] = $presenter->present(
                 $presentationSettings,
                 $rawProduct,
-                $this->context->language,
+                $this->context->language
             );
         }
 

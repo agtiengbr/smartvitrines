@@ -6,15 +6,23 @@ if (!defined('_PS_VERSION_')) {
 
 final class SmartvitrinesApiClient
 {
-    public function __construct(
-        private string $apiBaseUrl,
-    ) {}
+    /** @var string */
+    private $apiBaseUrl;
+
+    public function __construct($apiBaseUrl)
+    {
+        $this->apiBaseUrl = (string) $apiBaseUrl;
+    }
 
     /**
      * @return list<string>
      */
-    public function getRecommendations(string $publicKey, string $sku, int $limit = 4): array
+    public function getRecommendations($publicKey, $sku, $limit = 4)
     {
+        $publicKey = (string) $publicKey;
+        $sku = (string) $sku;
+        $limit = (int) $limit;
+
         if ($publicKey === '') {
             return [];
         }
@@ -36,7 +44,7 @@ final class SmartvitrinesApiClient
 
         try {
             $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             return [];
         }
 
@@ -55,14 +63,14 @@ final class SmartvitrinesApiClient
         return $skus;
     }
 
-    public function postConversion(string $publicKey, string $sessionId, string $orderRef): bool
+    public function postConversion($publicKey, $sessionId, $orderRef)
     {
         $url = rtrim($this->apiBaseUrl, '/') . '/v1/events/conversion';
 
         $payload = json_encode([
-            'public_key' => $publicKey,
-            'session_id' => $sessionId,
-            'order_ref' => $orderRef,
+            'public_key' => (string) $publicKey,
+            'session_id' => (string) $sessionId,
+            'order_ref' => (string) $orderRef,
         ], JSON_THROW_ON_ERROR);
 
         if (function_exists('curl_init')) {
@@ -105,10 +113,10 @@ final class SmartvitrinesApiClient
             return false;
         }
 
-        return str_contains($http_response_header[0], '202');
+        return strpos($http_response_header[0], '202') !== false;
     }
 
-    private function httpGet(string $url): ?string
+    private function httpGet($url)
     {
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
@@ -144,7 +152,7 @@ final class SmartvitrinesApiClient
         ]);
 
         $response = @file_get_contents($url, false, $context);
-        if ($response === false || !isset($http_response_header[0]) || !str_contains($http_response_header[0], '200')) {
+        if ($response === false || !isset($http_response_header[0]) || strpos($http_response_header[0], '200') === false) {
             return null;
         }
 
