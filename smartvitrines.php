@@ -95,8 +95,7 @@ class smartvitrines extends Module
             return '';
         }
 
-        $apiUrl = $this->getApiBaseUrl();
-        $scriptUrl = $apiUrl . '/sdk/v1/sv.min.js';
+        $scriptUrl = $this->getSdkScriptUrl();
 
         $this->context->smarty->assign([
             'smartvitrines_script_url' => $scriptUrl,
@@ -224,7 +223,12 @@ class smartvitrines extends Module
             return $configured;
         }
 
-        return 'https://api.smartvitrines.com';
+        return 'https://api.analytics.agti.eng.br';
+    }
+
+    public function getSdkScriptUrl(): string
+    {
+        return 'https://analytics.agti.eng.br/v1/sdk.min.js';
     }
 
     private function renderConfigForm(): string

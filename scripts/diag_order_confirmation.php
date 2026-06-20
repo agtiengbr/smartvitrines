@@ -34,4 +34,4 @@ echo "Hook HTML length: " . strlen($html) . "\n";
 echo substr($html, 0, 400) . (strlen($html) > 400 ? "\n...\n" : "\n");
 
 $header = $module->hookDisplayHeader([]);
-echo "Header has sv.min.js: " . (str_contains($header, 'sv.min.js') ? 'yes' : 'no') . "\n";
+echo "Header has sdk.min.js: " . (str_contains($header, 'sdk.min.js') ? 'yes' : 'no') . "\n";
