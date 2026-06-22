@@ -212,8 +212,7 @@ final class SmartvitrinesRecommendationsPresenter
                 FROM ' . _DB_PREFIX_ . 'product_attribute pa
                 INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_product = pa.id_product
                 ' . Shop::addSqlAssociation('product', 'p') . '
-                WHERE pa.reference = \'' . pSQL($reference) . '\'
-                LIMIT 1';
+                WHERE pa.reference = \'' . pSQL($reference) . '\'';
 
         return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
@@ -228,8 +227,7 @@ final class SmartvitrinesRecommendationsPresenter
         $sql = 'SELECT p.id_product
                 FROM ' . _DB_PREFIX_ . 'product p
                 ' . Shop::addSqlAssociation('product', 'p') . '
-                WHERE p.upc = \'' . pSQL($upc) . '\'
-                LIMIT 1';
+                WHERE p.upc = \'' . pSQL($upc) . '\'';
 
         return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }

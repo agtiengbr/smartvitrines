@@ -27,7 +27,7 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.2.9';
+        $this->version = '1.2.10';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
