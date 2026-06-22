@@ -17,19 +17,18 @@ final class SmartvitrinesApiClient
     /**
      * @return list<string>
      */
-    public function getRecommendations($publicKey, $sku, $limit = 4)
+    public function getRecommendations($publicKey, $sku, $limit)
     {
         $publicKey = (string) $publicKey;
         $sku = (string) $sku;
-        $limit = (int) $limit;
-
+        $limit = max(1, (int) $limit);
         if ($publicKey === '') {
             return [];
         }
 
         $query = [
             'public_key' => $publicKey,
-            'limit' => max(1, $limit),
+            'limit' => $limit,
         ];
         if ($sku !== '') {
             $query['sku'] = $sku;

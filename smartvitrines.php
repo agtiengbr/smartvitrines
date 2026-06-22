@@ -15,15 +15,19 @@ class smartvitrines extends Module
     public const CONFIG_API_URL = 'SMARTVITRINES_API_URL';
     public const CONFIG_SKU_FIELD = 'SMARTVITRINES_SKU_FIELD';
     public const CONFIG_THEME_LAYOUT = 'SMARTVITRINES_THEME_LAYOUT';
+    public const CONFIG_PDP_LIMIT = 'SMARTVITRINES_PDP_LIMIT';
+    public const CONFIG_CART_LIMIT = 'SMARTVITRINES_CART_LIMIT';
     public const THEME_LAYOUT_HUMMINGBIRD = 'hummingbird';
     public const THEME_LAYOUT_CLASSIC = 'classic';
-    public const RECOMMENDATIONS_LIMIT = 4;
+    public const DEFAULT_PDP_LIMIT = 4;
+    public const DEFAULT_CART_LIMIT = 4;
+    public const BO_LIMIT_MAX = 100;
 
     public function __construct()
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.2.1';
+        $this->version = '1.2.9';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -44,8 +48,11 @@ class smartvitrines extends Module
             && Configuration::updateValue(self::CONFIG_API_URL, '')
             && Configuration::updateValue(self::CONFIG_SKU_FIELD, 'reference')
             && Configuration::updateValue(self::CONFIG_THEME_LAYOUT, self::THEME_LAYOUT_HUMMINGBIRD)
+            && Configuration::updateValue(self::CONFIG_PDP_LIMIT, (string) self::DEFAULT_PDP_LIMIT)
+            && Configuration::updateValue(self::CONFIG_CART_LIMIT, (string) self::DEFAULT_CART_LIMIT)
             && $this->registerHook('displayHeader')
             && $this->registerHook('displayFooterProduct')
+            && $this->registerHook('displayShoppingCart')
             && $this->registerHook('displayOrderConfirmation');
     }
 
@@ -56,6 +63,8 @@ class smartvitrines extends Module
             && Configuration::deleteByName(self::CONFIG_API_URL)
             && Configuration::deleteByName(self::CONFIG_SKU_FIELD)
             && Configuration::deleteByName(self::CONFIG_THEME_LAYOUT)
+            && Configuration::deleteByName(self::CONFIG_PDP_LIMIT)
+            && Configuration::deleteByName(self::CONFIG_CART_LIMIT)
             && parent::uninstall();
     }
 
@@ -69,6 +78,8 @@ class smartvitrines extends Module
             $apiUrl = rtrim(trim((string) Tools::getValue(self::CONFIG_API_URL)), '/');
             $skuField = trim((string) Tools::getValue(self::CONFIG_SKU_FIELD));
             $themeLayout = (string) Tools::getValue(self::CONFIG_THEME_LAYOUT);
+            $pdpLimit = $this->normalizeConfiguredLimit(Tools::getValue(self::CONFIG_PDP_LIMIT));
+            $cartLimit = $this->normalizeConfiguredLimit(Tools::getValue(self::CONFIG_CART_LIMIT));
 
             if ($publicKey === '' || $secretKey === '') {
                 $output .= $this->displayError($this->l('Public Key e Secret Key são obrigatórios.'));
@@ -81,6 +92,8 @@ class smartvitrines extends Module
                     self::CONFIG_THEME_LAYOUT,
                     $this->normalizeThemeLayout($themeLayout)
                 );
+                Configuration::updateValue(self::CONFIG_PDP_LIMIT, (string) $pdpLimit);
+                Configuration::updateValue(self::CONFIG_CART_LIMIT, (string) $cartLimit);
                 $output .= $this->displayConfirmation($this->l('Configurações salvas.'));
             }
         }
@@ -122,25 +135,159 @@ class smartvitrines extends Module
             return '';
         }
 
+        $skuField = (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference');
+        $trackSku = $this->resolveProductSku($product, $skuField);
+        $html = '';
+
+        if ($trackSku !== '') {
+            $this->smarty->assign([
+                'smartvitrines_track_sku' => $trackSku,
+            ]);
+            $html .= $this->display(__FILE__, 'views/templates/hook/product-track.tpl');
+        }
+
         $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
         $result = $presenter->present(
             $publicKey,
             $this->getApiBaseUrl(),
-            (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference'),
+            $skuField,
             $product,
-            $this->l('Você também pode se interessar por:')
+            $this->l('Você também pode se interessar por:'),
+            $this->getConfiguredLimit(self::CONFIG_PDP_LIMIT)
+        );
+
+        if ($result['products'] === []) {
+            return $html;
+        }
+
+        $this->smarty->assign([
+            'smartvitrines_products' => $result['products'],
+            'smartvitrines_title' => $result['title'],
+        ]);
+
+        return $html . $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+    }
+
+    /**
+     * Bloco de recomendações na página do carrinho (renderização server-side).
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookDisplayShoppingCart($params)
+    {
+        $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
+        if ($publicKey === '') {
+            return '';
+        }
+
+        $cart = $params['cart'] ?? $this->context->cart ?? null;
+        if (!$cart instanceof Cart) {
+            return '';
+        }
+
+        $skuField = (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference');
+        $originSkus = $this->collectCartSkus($cart, $skuField);
+        if ($originSkus === []) {
+            return '';
+        }
+
+        $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
+        $result = $presenter->presentForSkus(
+            $publicKey,
+            $this->getApiBaseUrl(),
+            $skuField,
+            $originSkus,
+            $this->collectCartProductIds($cart),
+            $this->l('Complete sua compra com:'),
+            $this->getConfiguredLimit(self::CONFIG_CART_LIMIT)
         );
 
         if ($result['products'] === []) {
             return '';
         }
 
-        $this->context->smarty->assign([
+        $this->smarty->assign([
             'smartvitrines_products' => $result['products'],
             'smartvitrines_title' => $result['title'],
         ]);
 
         return $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+    }
+
+    /**
+     * @param Cart $cart
+     *
+     * @return list<string>
+     */
+    private function collectCartSkus($cart, $skuField)
+    {
+        $skus = [];
+        foreach ($cart->getProducts() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $sku = $this->resolveCartLineSku($row, $skuField);
+            if ($sku !== '' && !in_array($sku, $skus, true)) {
+                $skus[] = $sku;
+            }
+        }
+
+        return $skus;
+    }
+
+    /**
+     * @param Cart $cart
+     *
+     * @return list<int>
+     */
+    private function collectCartProductIds($cart)
+    {
+        $productIds = [];
+        foreach ($cart->getProducts() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $id = (int) ($row['id_product'] ?? 0);
+            if ($id > 0) {
+                $productIds[$id] = $id;
+            }
+        }
+
+        return array_values($productIds);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function resolveCartLineSku(array $row, $skuField)
+    {
+        switch ($skuField) {
+            case 'ean13':
+                return trim((string) ($row['ean13'] ?? ''));
+            case 'upc':
+                return trim((string) ($row['upc'] ?? ''));
+            default:
+                return trim((string) ($row['reference'] ?? ''));
+        }
+    }
+
+    /**
+     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
+     */
+    private function resolveProductSku($product, $skuField)
+    {
+        switch ($skuField) {
+            case 'ean13':
+                return trim((string) ($product['ean13'] ?? ''));
+            case 'upc':
+                return trim((string) ($product['upc'] ?? ''));
+            default:
+                $reference = (string) ($product['reference_to_display'] ?? $product['reference'] ?? '');
+
+                return trim($reference);
+        }
     }
 
     private function getRecommendationsTemplatePath()
@@ -162,6 +309,27 @@ class smartvitrines extends Module
         return $layout === self::THEME_LAYOUT_CLASSIC
             ? self::THEME_LAYOUT_CLASSIC
             : self::THEME_LAYOUT_HUMMINGBIRD;
+    }
+
+    private function getConfiguredLimit($configKey)
+    {
+        $stored = Configuration::get($configKey);
+        if ($stored === false || $stored === null || $stored === '') {
+            if ($configKey === self::CONFIG_CART_LIMIT) {
+                return self::DEFAULT_CART_LIMIT;
+            }
+
+            return self::DEFAULT_PDP_LIMIT;
+        }
+
+        return $this->normalizeConfiguredLimit($stored);
+    }
+
+    private function normalizeConfiguredLimit($value)
+    {
+        $limit = (int) $value;
+
+        return max(1, min(self::BO_LIMIT_MAX, $limit));
     }
 
     /**
@@ -295,6 +463,18 @@ class smartvitrines extends Module
                             'name' => 'name',
                         ],
                     ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Limite na página do produto (PDP)'),
+                        'name' => self::CONFIG_PDP_LIMIT,
+                        'desc' => $this->l('Quantidade exibida na PDP. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Limite no carrinho'),
+                        'name' => self::CONFIG_CART_LIMIT,
+                        'desc' => $this->l('Quantidade exibida no carrinho. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Salvar'),
@@ -318,6 +498,8 @@ class smartvitrines extends Module
             self::CONFIG_API_URL => Configuration::get(self::CONFIG_API_URL),
             self::CONFIG_SKU_FIELD => Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference',
             self::CONFIG_THEME_LAYOUT => $this->getThemeLayout(),
+            self::CONFIG_PDP_LIMIT => (string) $this->getConfiguredLimit(self::CONFIG_PDP_LIMIT),
+            self::CONFIG_CART_LIMIT => (string) $this->getConfiguredLimit(self::CONFIG_CART_LIMIT),
         ];
 
         return $helper->generateForm([$fieldsForm]);

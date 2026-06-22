@@ -18,6 +18,8 @@ Compatível com **PrestaShop 1.7.x a 9** e **PHP 7.4+** (requisito mínimo do PS
    - **API URL** — vazio para produção; dev: `http://host.docker.internal:18080`
    - **Campo SKU** — alinhado ao tenant (`reference`, `ean13`, `upc`)
    - **Layout das recomendações** — `Hummingbird` ou `Classic` (switch no BO)
+   - **Limite na PDP** — quantidade na página do produto (default **4**)
+   - **Limite no carrinho** — quantidade no carrinho (default **4**; ex.: **8** para vitrine maior)
 
 4. Cadastre no tenant SmartVitrines:
    - `platform_url` = URL base da loja (também usada para CORS no browser)
@@ -29,7 +31,13 @@ Compatível com **PrestaShop 1.7.x a 9** e **PHP 7.4+** (requisito mínimo do PS
      --platform-type=prestashop
    ```
 
-## Endpoint de pedido (worker)
+## View automático (SDK)
+
+O SDK tenta detectar o SKU via **JSON-LD** (`Product` em `application/ld+json`). Temas PrestaShop 1.7 customizados (ex.: IQIT / clubedovapor) frequentemente **não incluem** `product-jsonld.tpl` — só `WebPage` + microdata HTML.
+
+Nesses casos o módulo emite **`SmartVitrines.trackView(sku)`** no hook `displayFooterProduct`, usando a referência do produto/combinação do PrestaShop.
+
+Se a loja já tiver JSON-LD `Product` com `sku`, o SDK e o módulo deduplicam por página/sessão (apenas um evento).
 
 ```
 GET {platform_url}/index.php?fc=module&module=smartvitrines&controller=order&id={order_ref}
@@ -43,7 +51,8 @@ Resposta JSON: `id_pedido`, `data`, `total`, `items[]`.
 1. SDK (hook `displayHeader`) registra views na API
 2. Confirmação do pedido (`displayOrderConfirmation`) dispara conversão via SDK
 3. Worker SmartVitrines puxa pedido no endpoint acima e incrementa a matriz
-4. PDP (hook `displayFooterProduct`) exibe até **4** recomendações renderizadas no servidor (mesmo layout dos acessórios no tema Hummingbird)
+4. PDP (hook `displayFooterProduct`) exibe recomendações renderizadas no servidor (quantidade configurável no BO, default **4**)
+5. Carrinho (hook `displayShoppingCart`) exibe recomendações com base nos SKUs dos itens do carrinho (quantidade configurável no BO)
 
 ## Recomendações na página do produto
 
@@ -56,11 +65,22 @@ Hook: `displayFooterProduct` — bloco **"Você também pode se interessar por:"
 | Hummingbird | `hummingbird` | `components/module-products.tpl` (igual acessórios HB) |
 | Classic | `classic` | `product-accessories` + grid `row` (igual acessórios Classic) |
 
-- Consulta `GET /v1/recommendations` no PHP (não usa SDK no browser)
+- Consulta `GET /v1/recommendations?limit=N` no PHP (parâmetro **obrigatório**; teto na API via `SV_RECOMMENDATIONS_MAX_LIMIT`, default 20)
 - Resolve SKUs → produtos PrestaShop (`reference` / `ean13` / `upc`)
 - Apresenta com `ProductListingPresenter` (miniaturas iguais aos acessórios)
 
 **API URL** no BO deve ser acessível **do container/servidor PHP da loja** (ex.: `http://host.docker.internal:18080` em Docker WSL, não `localhost` do host).
+
+## Recomendações no carrinho
+
+Hook: `displayShoppingCart` — bloco **"Complete sua compra com:"** abaixo da grade do carrinho (tema clubedovapor expõe o hook em `checkout/cart.tpl`).
+
+- Coleta SKUs de todas as linhas do carrinho via `Cart::getProducts()` e o **Campo SKU** configurado (`reference`, `ean13`, `upc`)
+- Chama `GET /v1/recommendations?sku=SKU1,SKU2,...&limit=N` (CSV + limit obrigatório)
+- A API exclui grupos de origem; o módulo também omite produtos já presentes no carrinho
+- Reutiliza os mesmos templates Smarty da PDP (`product-recommendations-hummingbird.tpl` / `classic`)
+
+Instalações já ativas: registrar o hook com `scripts/register_hooks.php` ou reinstalar o módulo.
 
 ## Teste manual do endpoint
 

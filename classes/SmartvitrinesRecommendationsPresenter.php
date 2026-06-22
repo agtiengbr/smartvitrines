@@ -11,9 +11,6 @@ use PrestaShop\PrestaShop\Adapter\Product\ProductColorsRetriever;
 
 final class SmartvitrinesRecommendationsPresenter
 {
-    private const DISPLAY_LIMIT = 4;
-    private const API_FETCH_LIMIT = 12;
-
     /** @var Context */
     private $context;
 
@@ -27,10 +24,11 @@ final class SmartvitrinesRecommendationsPresenter
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
-    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title)
+    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title, $limit)
     {
         $empty = ['title' => (string) $title, 'products' => []];
         $product = $this->normalizeProduct($product);
+        $displayLimit = max(1, (int) $limit);
 
         $currentProductId = (int) ($product['id_product'] ?? 0);
         $sku = $this->extractSku((string) $skuField, $product);
@@ -39,14 +37,14 @@ final class SmartvitrinesRecommendationsPresenter
         }
 
         $client = new SmartvitrinesApiClient($apiBaseUrl);
-        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, self::API_FETCH_LIMIT);
+        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit);
         if ($recommendedSkus === []) {
             return $empty;
         }
 
         $productIds = [];
         foreach ($recommendedSkus as $recommendedSku) {
-            if (count($productIds) >= self::DISPLAY_LIMIT) {
+            if (count($productIds) >= $displayLimit) {
                 break;
             }
 
@@ -73,6 +71,87 @@ final class SmartvitrinesRecommendationsPresenter
     }
 
     /**
+     * Recomendações a partir de vários SKUs (ex.: itens do carrinho).
+     *
+     * @param list<string> $originSkus
+     * @param list<int> $excludeProductIds
+     *
+     * @return array{title: string, products: list<array<string, mixed>>}
+     */
+    public function presentForSkus($publicKey, $apiBaseUrl, $skuField, array $originSkus, array $excludeProductIds, $title, $limit)
+    {
+        $empty = ['title' => (string) $title, 'products' => []];
+        $originSkus = $this->normalizeSkuList($originSkus);
+        if ($originSkus === []) {
+            return $empty;
+        }
+
+        $displayLimit = max(1, (int) $limit);
+        $client = new SmartvitrinesApiClient($apiBaseUrl);
+        $recommendedSkus = $client->getRecommendations(
+            (string) $publicKey,
+            implode(',', $originSkus),
+            $displayLimit
+        );
+        if ($recommendedSkus === []) {
+            return $empty;
+        }
+
+        $excludeIds = [];
+        foreach ($excludeProductIds as $productId) {
+            $id = (int) $productId;
+            if ($id > 0) {
+                $excludeIds[$id] = true;
+            }
+        }
+
+        $productIds = [];
+        foreach ($recommendedSkus as $recommendedSku) {
+            if (count($productIds) >= $displayLimit) {
+                break;
+            }
+
+            $id = $this->resolveProductId((string) $skuField, $recommendedSku);
+            if ($id <= 0 || isset($excludeIds[$id]) || isset($productIds[$id])) {
+                continue;
+            }
+
+            if (!$this->isVisibleProduct($id)) {
+                continue;
+            }
+
+            $productIds[$id] = $id;
+        }
+
+        if ($productIds === []) {
+            return $empty;
+        }
+
+        return [
+            'title' => (string) $title,
+            'products' => $this->presentProducts(array_values($productIds)),
+        ];
+    }
+
+    /**
+     * @param list<string> $skus
+     *
+     * @return list<string>
+     */
+    private function normalizeSkuList(array $skus)
+    {
+        $normalized = [];
+        foreach ($skus as $sku) {
+            $value = trim((string) $sku);
+            if ($value !== '' && !in_array($value, $normalized, true)) {
+                $normalized[] = $value;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
      * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
      *
      * @return array<string, mixed>
@@ -82,6 +161,7 @@ final class SmartvitrinesRecommendationsPresenter
         return [
             'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
             'reference' => (string) ($product['reference'] ?? ''),
+            'reference_to_display' => (string) ($product['reference_to_display'] ?? ''),
             'ean13' => (string) ($product['ean13'] ?? ''),
             'upc' => (string) ($product['upc'] ?? ''),
         ];
@@ -98,7 +178,9 @@ final class SmartvitrinesRecommendationsPresenter
             case 'upc':
                 return trim((string) ($product['upc'] ?? ''));
             default:
-                return trim((string) ($product['reference'] ?? ''));
+                $reference = (string) ($product['reference_to_display'] ?? $product['reference'] ?? '');
+
+                return trim($reference);
         }
     }
 
@@ -110,8 +192,30 @@ final class SmartvitrinesRecommendationsPresenter
             case 'upc':
                 return $this->resolveProductIdByUpc($sku);
             default:
-                return (int) Product::getIdByReference($sku);
+                $id = (int) Product::getIdByReference($sku);
+                if ($id > 0) {
+                    return $id;
+                }
+
+                return $this->resolveProductIdByCombinationReference($sku);
         }
+    }
+
+    private function resolveProductIdByCombinationReference($reference)
+    {
+        $reference = (string) $reference;
+        if ($reference === '') {
+            return 0;
+        }
+
+        $sql = 'SELECT pa.id_product
+                FROM ' . _DB_PREFIX_ . 'product_attribute pa
+                INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_product = pa.id_product
+                ' . Shop::addSqlAssociation('product', 'p') . '
+                WHERE pa.reference = \'' . pSQL($reference) . '\'
+                LIMIT 1';
+
+        return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
 
     private function resolveProductIdByUpc($upc)
@@ -161,14 +265,9 @@ final class SmartvitrinesRecommendationsPresenter
             $this->context->getTranslator()
         );
 
-        $rawProducts = [];
-        foreach ($productIds as $productId) {
-            $rawProducts[] = ['id_product' => $productId];
-        }
-
-        $assembled = $assembler->assembleProducts($rawProducts);
         $presented = [];
-        foreach ($assembled as $rawProduct) {
+        foreach ($productIds as $productId) {
+            $rawProduct = $assembler->assembleProduct(['id_product' => $productId]);
             $presented[] = $presenter->present(
                 $presentationSettings,
                 $rawProduct,
