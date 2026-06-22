@@ -41,9 +41,8 @@ final class SmartvitrinesApiClient
             return [];
         }
 
-        try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\Throwable $e) {
+        $decoded = json_decode($body, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
             return [];
         }
 
@@ -70,7 +69,10 @@ final class SmartvitrinesApiClient
             'public_key' => (string) $publicKey,
             'session_id' => (string) $sessionId,
             'order_ref' => (string) $orderRef,
-        ], JSON_THROW_ON_ERROR);
+        ]);
+        if ($payload === false) {
+            return false;
+        }
 
         if (function_exists('curl_init')) {
             $ch = curl_init($url);

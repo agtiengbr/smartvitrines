@@ -1,6 +1,6 @@
 # Módulo PrestaShop SmartVitrines
 
-Compatível com **PrestaShop 1.7.x a 9** e **PHP 7.4+** (requisito mínimo do PS 1.7).
+Compatível com **PrestaShop 1.6.x a 9** e **PHP 7.1+** (recomendado PHP 7.4+ em PS 1.7+).
 
 ## Instalação
 
@@ -15,7 +15,7 @@ Compatível com **PrestaShop 1.7.x a 9** e **PHP 7.4+** (requisito mínimo do PS
 3. Preencha:
    - **Public Key** — `pk_live_...` (CLI `sv:tenant:create`)
    - **Secret Key** — mesma `sk_live_...` do tenant
-   - **API URL** — vazio para produção; dev: `http://host.docker.internal:18080`
+   - **API URL** — vazio para produção; dev Docker/WSL: `http://local_env:18080` (requer `extra_hosts: local_env:host-gateway` no container da loja)
    - **Campo SKU** — alinhado ao tenant (`reference`, `ean13`, `upc`)
    - **Layout das recomendações** — `Hummingbird` ou `Classic` (switch no BO)
    - **Limite na PDP** — quantidade na página do produto (default **4**)

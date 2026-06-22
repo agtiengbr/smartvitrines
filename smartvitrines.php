@@ -6,7 +6,11 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/classes/SmartvitrinesOrderExporter.php';
 require_once dirname(__FILE__) . '/classes/SmartvitrinesApiClient.php';
-require_once dirname(__FILE__) . '/classes/SmartvitrinesRecommendationsPresenter.php';
+if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+    require_once dirname(__FILE__) . '/classes/SmartvitrinesRecommendationsPresenter.php';
+} else {
+    require_once dirname(__FILE__) . '/classes/SmartvitrinesRecommendationsPresenterPs16.php';
+}
 
 class smartvitrines extends Module
 {
@@ -27,11 +31,11 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.2.10';
+        $this->version = '1.3.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = true;
-        $this->ps_versions_compliancy = ['min' => '1.7.0.0', 'max' => '9.99.99'];
+        $this->ps_versions_compliancy = ['min' => '1.6.0.0', 'max' => '9.99.99'];
 
         parent::__construct();
 
@@ -51,8 +55,7 @@ class smartvitrines extends Module
             && Configuration::updateValue(self::CONFIG_PDP_LIMIT, (string) self::DEFAULT_PDP_LIMIT)
             && Configuration::updateValue(self::CONFIG_CART_LIMIT, (string) self::DEFAULT_CART_LIMIT)
             && $this->registerHook('displayHeader')
-            && $this->registerHook('displayFooterProduct')
-            && $this->registerHook('displayShoppingCart')
+            && $this->registerRecommendationHooks()
             && $this->registerHook('displayOrderConfirmation');
     }
 
@@ -119,26 +122,49 @@ class smartvitrines extends Module
     }
 
     /**
+     * PS 1.6 — recomendações na página do produto.
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookProductFooter($params)
+    {
+        return $this->renderProductRecommendations($params);
+    }
+
+    /**
      * Bloco de recomendações na página do produto (renderização server-side).
      *
      * @param array<string, mixed> $params
      */
     public function hookDisplayFooterProduct($params)
     {
+        return $this->renderProductRecommendations($params);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function renderProductRecommendations($params)
+    {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
-        $product = $params['product'] ?? null;
+        $product = isset($params['product']) ? $params['product'] : null;
+        if ($publicKey === '' || $product === null) {
+            return '';
+        }
+
         if (
-            $publicKey === ''
-            || $product === null
-            || (!is_array($product) && !$product instanceof \ArrayAccess)
+            !is_array($product)
+            && !($product instanceof \ArrayAccess)
+            && !($product instanceof Product)
         ) {
             return '';
         }
 
+        $product = $this->normalizeHookProduct($product);
         $skuField = (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference');
-        $trackSku = $this->resolveProductSku($product, $skuField);
         $html = '';
 
+        $trackSku = $this->resolveProductSku($product, $skuField);
         if ($trackSku !== '') {
             $this->smarty->assign([
                 'smartvitrines_track_sku' => $trackSku,
@@ -146,7 +172,7 @@ class smartvitrines extends Module
             $html .= $this->display(__FILE__, 'views/templates/hook/product-track.tpl');
         }
 
-        $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
+        $presenter = $this->createRecommendationsPresenter();
         $result = $presenter->present(
             $publicKey,
             $this->getApiBaseUrl(),
@@ -169,18 +195,36 @@ class smartvitrines extends Module
     }
 
     /**
+     * PS 1.6 — recomendações no carrinho.
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookShoppingCartExtra($params)
+    {
+        return $this->renderCartRecommendations($params);
+    }
+
+    /**
      * Bloco de recomendações na página do carrinho (renderização server-side).
      *
      * @param array<string, mixed> $params
      */
     public function hookDisplayShoppingCart($params)
     {
+        return $this->renderCartRecommendations($params);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function renderCartRecommendations($params)
+    {
         $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
         if ($publicKey === '') {
             return '';
         }
 
-        $cart = $params['cart'] ?? $this->context->cart ?? null;
+        $cart = isset($params['cart']) ? $params['cart'] : ($this->context->cart ?? null);
         if (!$cart instanceof Cart) {
             return '';
         }
@@ -191,7 +235,7 @@ class smartvitrines extends Module
             return '';
         }
 
-        $presenter = new SmartvitrinesRecommendationsPresenter($this->context);
+        $presenter = $this->createRecommendationsPresenter();
         $result = $presenter->presentForSkus(
             $publicKey,
             $this->getApiBaseUrl(),
@@ -263,14 +307,14 @@ class smartvitrines extends Module
      */
     private function resolveCartLineSku(array $row, $skuField)
     {
-        switch ($skuField) {
-            case 'ean13':
-                return trim((string) ($row['ean13'] ?? ''));
-            case 'upc':
-                return trim((string) ($row['upc'] ?? ''));
-            default:
-                return trim((string) ($row['reference'] ?? ''));
+        if ($skuField === 'ean13') {
+            return trim((string) ($row['ean13'] ?? ''));
         }
+        if ($skuField === 'upc') {
+            return trim((string) ($row['upc'] ?? ''));
+        }
+
+        return $this->resolveProductSku($row, 'reference');
     }
 
     /**
@@ -285,18 +329,99 @@ class smartvitrines extends Module
                 return trim((string) ($product['upc'] ?? ''));
             default:
                 $reference = (string) ($product['reference_to_display'] ?? $product['reference'] ?? '');
+                $reference = trim($reference);
+                if ($reference !== '') {
+                    return $reference;
+                }
 
-                return trim($reference);
+                return $this->resolveFallbackProductSku($product);
         }
+    }
+
+    /**
+     * Lojas sem reference no produto pai usam id da combinação default (mesmo padrão do feed aggoogleshopping).
+     *
+     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
+     */
+    private function resolveFallbackProductSku($product)
+    {
+        $idProduct = (int) ($product['id_product'] ?? 0);
+        if ($idProduct <= 0) {
+            return '';
+        }
+
+        $defaultAttr = (int) Product::getDefaultAttribute($idProduct);
+        if ($defaultAttr > 0) {
+            return (string) $defaultAttr;
+        }
+
+        return (string) $idProduct;
     }
 
     private function getRecommendationsTemplatePath()
     {
+        if (!version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            return 'views/templates/hook/product-recommendations-ps16.tpl';
+        }
+
         if ($this->getThemeLayout() === self::THEME_LAYOUT_CLASSIC) {
             return 'views/templates/hook/product-recommendations-classic.tpl';
         }
 
         return 'views/templates/hook/product-recommendations-hummingbird.tpl';
+    }
+
+    private function registerRecommendationHooks()
+    {
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            return $this->registerHook('displayFooterProduct')
+                && $this->registerHook('displayShoppingCart');
+        }
+
+        return $this->registerHook('productFooter')
+            && $this->registerHook('shoppingCartExtra');
+    }
+
+    /**
+     * @return SmartvitrinesRecommendationsPresenter|SmartvitrinesRecommendationsPresenterPs16
+     */
+    private function createRecommendationsPresenter()
+    {
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            return new SmartvitrinesRecommendationsPresenter($this->context);
+        }
+
+        return new SmartvitrinesRecommendationsPresenterPs16($this->context);
+    }
+
+    /**
+     * @param array<string, mixed>|\ArrayAccess<string, mixed>|Product $product
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeHookProduct($product)
+    {
+        if ($product instanceof Product) {
+            return [
+                'id_product' => (int) $product->id,
+                'reference' => (string) $product->reference,
+                'reference_to_display' => (string) $product->reference,
+                'ean13' => (string) $product->ean13,
+                'upc' => (string) $product->upc,
+            ];
+        }
+
+        if (is_array($product) || $product instanceof \ArrayAccess) {
+            return [
+                'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
+                'reference' => (string) ($product['reference'] ?? ''),
+                'reference_to_display' => (string) ($product['reference_to_display'] ?? $product['reference'] ?? ''),
+                'ean13' => (string) ($product['ean13'] ?? ''),
+                'upc' => (string) ($product['upc'] ?? ''),
+            ];
+        }
+
+        return [];
     }
 
     private function getThemeLayout()
@@ -397,90 +522,114 @@ class smartvitrines extends Module
 
     public function getSdkScriptUrl()
     {
+        $configured = rtrim(trim((string) Configuration::get(self::CONFIG_API_URL)), '/');
+        if ($configured !== '') {
+            return $configured . '/v1/sdk.min.js';
+        }
+
         return 'https://analytics.agti.eng.br/v1/sdk.min.js';
     }
 
     private function renderConfigForm()
     {
-        $fieldsForm = [
-            'form' => [
+        $inputs = [
+            [
+                'type' => 'text',
+                'label' => $this->l('Public Key'),
+                'name' => self::CONFIG_PUBLIC_KEY,
+                'required' => true,
+                'desc' => $this->l('Chave pública do tenant (pk_live_...).'),
+            ],
+            [
+                'type' => 'text',
+                'label' => $this->l('Secret Key'),
+                'name' => self::CONFIG_SECRET_KEY,
+                'required' => true,
+                'desc' => $this->l('Mesma secret_key do tenant — auth do worker no endpoint de pedido.'),
+            ],
+            [
+                'type' => 'text',
+                'label' => $this->l('API URL'),
+                'name' => self::CONFIG_API_URL,
+                'desc' => $this->l('Base da API SmartVitrines. Vazio = produção. Dev Docker: http://local_env:18080'),
+            ],
+            [
+                'type' => 'select',
+                'label' => $this->l('Campo SKU'),
+                'name' => self::CONFIG_SKU_FIELD,
+                'options' => [
+                    'query' => [
+                        ['id' => 'reference', 'name' => $this->l('Referência (reference)')],
+                        ['id' => 'ean13', 'name' => $this->l('EAN-13')],
+                        ['id' => 'upc', 'name' => $this->l('UPC')],
+                    ],
+                    'id' => 'id',
+                    'name' => 'name',
+                ],
+            ],
+        ];
+
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            $inputs[] = [
+                'type' => 'select',
+                'label' => $this->l('Layout das recomendações'),
+                'name' => self::CONFIG_THEME_LAYOUT,
+                'desc' => $this->l('Escolha o markup compatível com o tema ativo da loja.'),
+                'options' => [
+                    'query' => [
+                        [
+                            'id' => self::THEME_LAYOUT_HUMMINGBIRD,
+                            'name' => $this->l('Hummingbird (module-products)'),
+                        ],
+                        [
+                            'id' => self::THEME_LAYOUT_CLASSIC,
+                            'name' => $this->l('Classic (product-accessories)'),
+                        ],
+                    ],
+                    'id' => 'id',
+                    'name' => 'name',
+                ],
+            ];
+        }
+
+        $inputs[] = [
+            'type' => 'text',
+            'label' => $this->l('Limite na página do produto (PDP)'),
+            'name' => self::CONFIG_PDP_LIMIT,
+            'desc' => $this->l('Quantidade exibida na PDP. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
+        ];
+        $inputs[] = [
+            'type' => 'text',
+            'label' => $this->l('Limite no carrinho'),
+            'name' => self::CONFIG_CART_LIMIT,
+            'desc' => $this->l('Quantidade exibida no carrinho. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
+        ];
+
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            $fieldsForm = [
+                'form' => [
+                    'legend' => [
+                        'title' => $this->l('SmartVitrines'),
+                        'icon' => 'icon-cogs',
+                    ],
+                    'input' => $inputs,
+                    'submit' => [
+                        'title' => $this->l('Salvar'),
+                    ],
+                ],
+            ];
+        } else {
+            $fieldsForm = [
                 'legend' => [
                     'title' => $this->l('SmartVitrines'),
                     'icon' => 'icon-cogs',
                 ],
-                'input' => [
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Public Key'),
-                        'name' => self::CONFIG_PUBLIC_KEY,
-                        'required' => true,
-                        'desc' => $this->l('Chave pública do tenant (pk_live_...).'),
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Secret Key'),
-                        'name' => self::CONFIG_SECRET_KEY,
-                        'required' => true,
-                        'desc' => $this->l('Mesma secret_key do tenant — auth do worker no endpoint de pedido.'),
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('API URL'),
-                        'name' => self::CONFIG_API_URL,
-                        'desc' => $this->l('Base da API SmartVitrines. Vazio = produção. Dev: http://host.docker.internal:18080'),
-                    ],
-                    [
-                        'type' => 'select',
-                        'label' => $this->l('Campo SKU'),
-                        'name' => self::CONFIG_SKU_FIELD,
-                        'options' => [
-                            'query' => [
-                                ['id' => 'reference', 'name' => $this->l('Referência (reference)')],
-                                ['id' => 'ean13', 'name' => $this->l('EAN-13')],
-                                ['id' => 'upc', 'name' => $this->l('UPC')],
-                            ],
-                            'id' => 'id',
-                            'name' => 'name',
-                        ],
-                    ],
-                    [
-                        'type' => 'select',
-                        'label' => $this->l('Layout das recomendações'),
-                        'name' => self::CONFIG_THEME_LAYOUT,
-                        'desc' => $this->l('Escolha o markup compatível com o tema ativo da loja.'),
-                        'options' => [
-                            'query' => [
-                                [
-                                    'id' => self::THEME_LAYOUT_HUMMINGBIRD,
-                                    'name' => $this->l('Hummingbird (module-products)'),
-                                ],
-                                [
-                                    'id' => self::THEME_LAYOUT_CLASSIC,
-                                    'name' => $this->l('Classic (product-accessories)'),
-                                ],
-                            ],
-                            'id' => 'id',
-                            'name' => 'name',
-                        ],
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Limite na página do produto (PDP)'),
-                        'name' => self::CONFIG_PDP_LIMIT,
-                        'desc' => $this->l('Quantidade exibida na PDP. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Limite no carrinho'),
-                        'name' => self::CONFIG_CART_LIMIT,
-                        'desc' => $this->l('Quantidade exibida no carrinho. Teto final na API: SV_RECOMMENDATIONS_MAX_LIMIT (default 20).'),
-                    ],
-                ],
+                'input' => $inputs,
                 'submit' => [
                     'title' => $this->l('Salvar'),
                 ],
-            ],
-        ];
+            ];
+        }
 
         $helper = new HelperForm();
         $helper->show_toolbar = false;
