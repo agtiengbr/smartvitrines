@@ -31,7 +31,7 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.3.1';
+        $this->version = '1.3.2';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = version_compare(_PS_VERSION_, '1.7.0.0', '>=');
