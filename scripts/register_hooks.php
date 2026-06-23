@@ -1,13 +1,12 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * One-off: docker exec ps_modulos_web php modules/smartvitrines/scripts/register_hooks.php
  */
 $configCandidates = [
     dirname(__DIR__, 3) . '/config/config.inc.php',
     dirname(__DIR__, 3) . '/public_html/config/config.inc.php',
+    dirname(__DIR__, 4) . '/shop/config/config.inc.php',
 ];
 
 $configLoaded = false;
@@ -30,7 +29,15 @@ if (!$module) {
     exit(1);
 }
 
-$register = ['displayOrderConfirmation', 'displayFooterProduct'];
+$register = ['displayOrderConfirmation', 'displayHeader'];
+if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+    $register[] = 'displayFooterProduct';
+    $register[] = 'displayShoppingCart';
+} else {
+    $register[] = 'productFooter';
+    $register[] = 'shoppingCartExtra';
+}
+
 $unregister = ['actionValidateOrder'];
 
 foreach ($register as $hook) {
@@ -42,3 +49,4 @@ foreach ($unregister as $hook) {
 }
 
 echo "Module version: {$module->version}\n";
+echo 'PS version: ' . _PS_VERSION_ . "\n";

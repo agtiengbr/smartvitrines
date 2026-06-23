@@ -4,12 +4,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-use PrestaShop\PrestaShop\Adapter\Image\ImageRetriever;
-use PrestaShop\PrestaShop\Adapter\Presenter\Product\ProductListingPresenter;
-use PrestaShop\PrestaShop\Adapter\Product\PriceFormatter;
-use PrestaShop\PrestaShop\Adapter\Product\ProductColorsRetriever;
-
-final class SmartvitrinesRecommendationsPresenter
+final class SmartvitrinesRecommendationsPresenterPs16
 {
     /** @var Context */
     private $context;
@@ -20,7 +15,7 @@ final class SmartvitrinesRecommendationsPresenter
     }
 
     /**
-     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
+     * @param array<string, mixed>|\ArrayAccess<string, mixed>|Product $product
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
@@ -32,9 +27,6 @@ final class SmartvitrinesRecommendationsPresenter
 
         $currentProductId = (int) ($product['id_product'] ?? 0);
         $sku = $this->extractSku((string) $skuField, $product);
-        if ($sku === '') {
-            return $empty;
-        }
 
         $client = new SmartvitrinesApiClient($apiBaseUrl);
         $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit);
@@ -71,8 +63,6 @@ final class SmartvitrinesRecommendationsPresenter
     }
 
     /**
-     * Recomendações a partir de vários SKUs (ex.: itens do carrinho).
-     *
      * @param list<string> $originSkus
      * @param list<int> $excludeProductIds
      *
@@ -152,12 +142,22 @@ final class SmartvitrinesRecommendationsPresenter
     }
 
     /**
-     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
+     * @param array<string, mixed>|\ArrayAccess<string, mixed>|Product $product
      *
      * @return array<string, mixed>
      */
     private function normalizeProduct($product)
     {
+        if ($product instanceof Product) {
+            return [
+                'id_product' => (int) $product->id,
+                'reference' => (string) $product->reference,
+                'reference_to_display' => (string) $product->reference,
+                'ean13' => (string) $product->ean13,
+                'upc' => (string) $product->upc,
+            ];
+        }
+
         return [
             'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
             'reference' => (string) ($product['reference'] ?? ''),
@@ -179,9 +179,36 @@ final class SmartvitrinesRecommendationsPresenter
                 return trim((string) ($product['upc'] ?? ''));
             default:
                 $reference = (string) ($product['reference_to_display'] ?? $product['reference'] ?? '');
+                $reference = trim($reference);
+                if ($reference !== '') {
+                    return $reference;
+                }
 
-                return trim($reference);
+                $idProduct = (int) ($product['id_product'] ?? 0);
+                if ($idProduct <= 0) {
+                    return '';
+                }
+
+                $defaultAttr = (int) Product::getDefaultAttribute($idProduct);
+
+                return $defaultAttr > 0 ? (string) $defaultAttr : (string) $idProduct;
         }
+    }
+
+    private function resolveProductIdByAttributeId($attributeId)
+    {
+        $attributeId = (int) $attributeId;
+        if ($attributeId <= 0) {
+            return 0;
+        }
+
+        $sql = 'SELECT pa.id_product
+                FROM ' . _DB_PREFIX_ . 'product_attribute pa
+                INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_product = pa.id_product
+                ' . Shop::addSqlAssociation('product', 'p') . '
+                WHERE pa.id_product_attribute = ' . $attributeId;
+
+        return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
     }
 
     private function resolveProductId($skuField, $sku)
@@ -192,7 +219,7 @@ final class SmartvitrinesRecommendationsPresenter
             case 'upc':
                 return $this->resolveProductIdByUpc($sku);
             default:
-                $id = (int) Product::getIdByReference($sku);
+                $id = $this->resolveProductIdByReference($sku);
                 if ($id > 0) {
                     return $id;
                 }
@@ -201,11 +228,31 @@ final class SmartvitrinesRecommendationsPresenter
         }
     }
 
+    private function resolveProductIdByReference($reference)
+    {
+        $reference = (string) $reference;
+        if ($reference === '') {
+            return 0;
+        }
+
+        $sql = 'SELECT p.id_product
+                FROM ' . _DB_PREFIX_ . 'product p
+                ' . Shop::addSqlAssociation('product', 'p') . '
+                WHERE p.reference = \'' . pSQL($reference) . '\'';
+
+        return (int) Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+    }
+
     private function resolveProductIdByCombinationReference($reference)
     {
         $reference = (string) $reference;
         if ($reference === '') {
             return 0;
+        }
+
+        $id = $this->resolveProductIdByAttributeId((int) $reference);
+        if ($id > 0) {
+            return $id;
         }
 
         $sql = 'SELECT pa.id_product
@@ -250,27 +297,70 @@ final class SmartvitrinesRecommendationsPresenter
      */
     private function presentProducts(array $productIds)
     {
-        $assembler = new ProductAssembler($this->context);
-        $presenterFactory = new ProductPresenterFactory($this->context);
-        $presentationSettings = $presenterFactory->getPresentationSettings();
-        $presentationSettings->showPrices = true;
-
-        $presenter = new ProductListingPresenter(
-            new ImageRetriever($this->context->link),
-            $this->context->link,
-            new PriceFormatter(),
-            new ProductColorsRetriever(),
-            $this->context->getTranslator()
-        );
-
+        $langId = (int) $this->context->language->id;
         $presented = [];
+
         foreach ($productIds as $productId) {
-            $rawProduct = $assembler->assembleProduct(['id_product' => $productId]);
-            $presented[] = $presenter->present(
-                $presentationSettings,
-                $rawProduct,
-                $this->context->language
+            $productId = (int) $productId;
+            if ($productId <= 0) {
+                continue;
+            }
+
+            $product = new Product($productId, true, $langId);
+            if (!Validate::isLoadedObject($product)) {
+                continue;
+            }
+
+            $idProductAttribute = (int) Product::getDefaultAttribute($productId);
+            $row = [
+                'id_product' => $productId,
+                'id_product_attribute' => $idProductAttribute > 0 ? $idProductAttribute : null,
+                'out_of_stock' => (int) $product->out_of_stock,
+                'id_category_default' => (int) $product->id_category_default,
+                'link_rewrite' => (string) $product->link_rewrite,
+                'ean13' => (string) $product->ean13,
+                'name' => (string) $product->name,
+                'description_short' => (string) $product->description_short,
+            ];
+            $raw = Product::getProductProperties($langId, $row, $this->context);
+            if (!is_array($raw) || empty($raw['id_product'])) {
+                continue;
+            }
+
+            if (empty($raw['name'])) {
+                $raw['name'] = (string) $product->name;
+            }
+            if (empty($raw['link_rewrite'])) {
+                $raw['link_rewrite'] = (string) $product->link_rewrite;
+            }
+            if (empty($raw['description_short'])) {
+                $raw['description_short'] = (string) $product->description_short;
+            }
+
+            $quantity = (int) StockAvailable::getQuantityAvailableByProduct(
+                $productId,
+                $idProductAttribute > 0 ? $idProductAttribute : null
             );
+
+            $raw['quantity'] = $quantity;
+            $raw['allow_oosp'] = (bool) Product::isAvailableWhenOutOfStock((int) $product->out_of_stock);
+            $raw['available_for_order'] = (bool) $product->available_for_order;
+            $raw['show_price'] = isset($raw['show_price']) ? (bool) $raw['show_price'] : true;
+
+            $cover = Image::getCover($productId);
+            $raw['id_image'] = is_array($cover) && isset($cover['id_image'])
+                ? (int) $cover['id_image']
+                : 0;
+            $raw['legend'] = isset($raw['name']) ? (string) $raw['name'] : '';
+            $raw['link'] = $this->context->link->getProductLink(
+                $productId,
+                isset($raw['link_rewrite']) ? $raw['link_rewrite'] : null,
+                isset($raw['category']) ? $raw['category'] : null,
+                null,
+                $langId
+            );
+
+            $presented[] = $raw;
         }
 
         return $presented;
