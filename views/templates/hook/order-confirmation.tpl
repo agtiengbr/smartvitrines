@@ -1,6 +1,21 @@
 {**
- * SmartVitrines — conversão via SDK na confirmação do pedido
+ * SmartVitrines — SDK + conversão na confirmação do pedido
+ * PS 1.6 não injeta displayHeader nesta página; o SDK precisa estar inline.
  *}
+<script>
+(function (w, d, s, u) {
+  w.SmartVitrines = w.SmartVitrines || { q: [] };
+  w.SmartVitrines.init = function (c) { w.SmartVitrines.q.push(['init', c]); };
+  var j = d.createElement(s);
+  j.async = true;
+  j.src = u;
+  d.head.appendChild(j);
+})(window, document, 'script', '{$smartvitrines_script_url|escape:'javascript'}');
+
+SmartVitrines.init({
+  publicKey: '{$smartvitrines_public_key|escape:'javascript'}'
+});
+</script>
 <script>
 (function (orderRef) {
   var attempts = 0;
