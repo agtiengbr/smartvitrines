@@ -469,18 +469,34 @@ class smartvitrines extends Module
             return '';
         }
 
-        if (!isset($params['order']) || !($params['order'] instanceof Order)) {
+        $order = $this->resolveOrderConfirmationOrder($params);
+        if (!$order instanceof Order) {
             return '';
         }
 
-        /** @var Order $order */
-        $order = $params['order'];
-
         $this->context->smarty->assign([
             'smartvitrines_order_ref' => (string) $order->id,
+            'smartvitrines_script_url' => $this->getSdkScriptUrl(),
+            'smartvitrines_public_key' => $publicKey,
         ]);
 
         return $this->display(__FILE__, 'views/templates/hook/order-confirmation.tpl');
+    }
+
+    /**
+     * PS 1.6 passes objOrder; PS 1.7+ passes order.
+     *
+     * @param array<string, mixed> $params
+     */
+    private function resolveOrderConfirmationOrder($params)
+    {
+        foreach (['order', 'objOrder'] as $key) {
+            if (isset($params[$key]) && $params[$key] instanceof Order) {
+                return $params[$key];
+            }
+        }
+
+        return null;
     }
 
     public function validateWorkerAuth()
