@@ -19,7 +19,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
-    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title, $limit)
+    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title, $limit, $sessionId = null)
     {
         $empty = ['title' => (string) $title, 'products' => []];
         $product = $this->normalizeProduct($product);
@@ -29,7 +29,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
         $sku = $this->extractSku((string) $skuField, $product);
 
         $client = new SmartvitrinesApiClient($apiBaseUrl);
-        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit);
+        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit, $sessionId);
         if ($recommendedSkus === []) {
             return $empty;
         }
@@ -68,7 +68,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
      *
      * @return array{title: string, products: list<array<string, mixed>>}
      */
-    public function presentForSkus($publicKey, $apiBaseUrl, $skuField, array $originSkus, array $excludeProductIds, $title, $limit)
+    public function presentForSkus($publicKey, $apiBaseUrl, $skuField, array $originSkus, array $excludeProductIds, $title, $limit, $sessionId = null)
     {
         $empty = ['title' => (string) $title, 'products' => []];
         $originSkus = $this->normalizeSkuList($originSkus);
@@ -81,7 +81,8 @@ final class SmartvitrinesRecommendationsPresenterPs16
         $recommendedSkus = $client->getRecommendations(
             (string) $publicKey,
             implode(',', $originSkus),
-            $displayLimit
+            $displayLimit,
+            $sessionId
         );
         if ($recommendedSkus === []) {
             return $empty;

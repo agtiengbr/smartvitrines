@@ -17,7 +17,7 @@ final class SmartvitrinesApiClient
     /**
      * @return list<string>
      */
-    public function getRecommendations($publicKey, $sku, $limit)
+    public function getRecommendations($publicKey, $sku, $limit, $sessionId = null)
     {
         $publicKey = (string) $publicKey;
         $sku = (string) $sku;
@@ -32,6 +32,9 @@ final class SmartvitrinesApiClient
         ];
         if ($sku !== '') {
             $query['sku'] = $sku;
+        }
+        if ($sessionId !== null && $sessionId !== '') {
+            $query['session_id'] = (string) $sessionId;
         }
 
         $url = rtrim($this->apiBaseUrl, '/') . '/v1/recommendations?' . http_build_query($query);

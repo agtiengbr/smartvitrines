@@ -31,7 +31,7 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.4.0';
+        $this->version = '1.4.2';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = version_compare(_PS_VERSION_, '1.7.0.0', '>=');
@@ -173,13 +173,15 @@ class smartvitrines extends Module
         }
 
         $presenter = $this->createRecommendationsPresenter();
+        $sessionId = $this->resolveSdkSessionId();
         $result = $presenter->present(
             $publicKey,
             $this->getApiBaseUrl(),
             $skuField,
             $product,
             $this->l('Você também pode se interessar por:'),
-            $this->getConfiguredLimit(self::CONFIG_PDP_LIMIT)
+            $this->getConfiguredLimit(self::CONFIG_PDP_LIMIT),
+            $sessionId
         );
 
         if ($result['products'] === []) {
@@ -236,6 +238,7 @@ class smartvitrines extends Module
         }
 
         $presenter = $this->createRecommendationsPresenter();
+        $sessionId = $this->resolveSdkSessionId();
         $result = $presenter->presentForSkus(
             $publicKey,
             $this->getApiBaseUrl(),
@@ -243,7 +246,8 @@ class smartvitrines extends Module
             $originSkus,
             $this->collectCartProductIds($cart),
             $this->l('Complete sua compra com:'),
-            $this->getConfiguredLimit(self::CONFIG_CART_LIMIT)
+            $this->getConfiguredLimit(self::CONFIG_CART_LIMIT),
+            $sessionId
         );
 
         if ($result['products'] === []) {
@@ -455,6 +459,25 @@ class smartvitrines extends Module
         $limit = (int) $value;
 
         return max(1, min(self::BO_LIMIT_MAX, $limit));
+    }
+
+    /**
+     * session_id do SDK (cookie sv_session_id) para atribuição de recomendações served.
+     *
+     * @return string|null
+     */
+    private function resolveSdkSessionId()
+    {
+        $sessionId = isset($_COOKIE['sv_session_id']) ? trim((string) $_COOKIE['sv_session_id']) : '';
+        if ($sessionId === '') {
+            return null;
+        }
+
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $sessionId)) {
+            return null;
+        }
+
+        return $sessionId;
     }
 
     /**

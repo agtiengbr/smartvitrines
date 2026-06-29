@@ -1,43 +1,36 @@
 {**
  * SmartVitrines — SDK + conversão na confirmação do pedido
  * PS 1.6 não injeta displayHeader nesta página; o SDK precisa estar inline.
+ * Usa fila q[] do SDK: init antes de trackConversion (evita race com script async).
  *}
 <script>
-(function (w, d, s, u) {
-  w.SmartVitrines = w.SmartVitrines || { q: [] };
-  w.SmartVitrines.init = function (c) { w.SmartVitrines.q.push(['init', c]); };
-  var j = d.createElement(s);
-  j.async = true;
-  j.src = u;
-  d.head.appendChild(j);
-})(window, document, 'script', '{$smartvitrines_script_url|escape:'javascript'}');
+(function (w, d, s, u, orderRef, publicKey) {
+  var config = { publicKey: publicKey };
 
-SmartVitrines.init({
-  publicKey: '{$smartvitrines_public_key|escape:'javascript'}'
-});
-</script>
-<script>
-(function (orderRef) {
-  var attempts = 0;
+  function enqueueAndLoad() {
+    w.SmartVitrines = w.SmartVitrines || { q: [] };
+    w.SmartVitrines.init = function (c) { w.SmartVitrines.q.push(['init', c]); };
+    w.SmartVitrines.trackConversion = function (ref) {
+      w.SmartVitrines.q.push(['trackConversion', ref]);
+    };
 
-  function trackConversion() {
-    if (window.SmartVitrines && typeof SmartVitrines.trackConversion === 'function') {
-      SmartVitrines.trackConversion(orderRef).catch(function () {});
-      return true;
-    }
+    w.SmartVitrines.init(config);
+    w.SmartVitrines.trackConversion(orderRef);
 
-    return false;
+    var j = d.createElement(s);
+    j.async = true;
+    j.src = u;
+    d.head.appendChild(j);
   }
 
-  (function waitForSdk() {
-    if (trackConversion()) {
-      return;
-    }
+  // SDK já carregado (ex.: tema injetou header antes do checkout)
+  if (w.SmartVitrines && w.SmartVitrines.version && typeof w.SmartVitrines.init === 'function' && typeof w.SmartVitrines.trackConversion === 'function') {
+    w.SmartVitrines.init(config).then(function () {
+      return w.SmartVitrines.trackConversion(orderRef);
+    }).catch(function () {});
+    return;
+  }
 
-    attempts += 1;
-    if (attempts < 100) {
-      window.setTimeout(waitForSdk, 100);
-    }
-  })();
-})('{$smartvitrines_order_ref|escape:'javascript'}');
+  enqueueAndLoad();
+})(window, document, 'script', '{$smartvitrines_script_url|escape:'javascript'}', '{$smartvitrines_order_ref|escape:'javascript'}', '{$smartvitrines_public_key|escape:'javascript'}');
 </script>
