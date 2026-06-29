@@ -1,11 +1,12 @@
 {**
  * SmartVitrines — recomendações na PDP/carrinho (layout default-bootstrap PS 1.6).
+ * Use smartvitrines-block (not accessories-block): product.js removes empty .accessories-block parents.
  *}
 <section class="page-product-box smartvitrines-recommendations">
   <h3 class="page-product-heading">{$smartvitrines_title|escape:'htmlall':'UTF-8'}</h3>
-  <div class="block products_block accessories-block clearfix">
+  <div class="block products_block smartvitrines-block clearfix">
     <div class="block_content">
-      <ul class="bxslider clearfix">
+      <ul id="smartvitrines-bxslider" class="bxslider clearfix">
         {foreach from=$smartvitrines_products item=product name=smartvitrines_list}
           {if $product.available_for_order && !isset($restricted_country_mode)}
             {assign var='svProductLink' value=$product.link|default:$link->getProductLink($product.id_product, $product.link_rewrite, $product.category)}
@@ -52,3 +53,23 @@
     </div>
   </div>
 </section>
+{if $smartvitrines_products|@count > 0}
+<script type="text/javascript">
+$(document).ready(function () {
+  if ($('#smartvitrines-bxslider li').length && !!$.prototype.bxSlider) {
+    $('#smartvitrines-bxslider').bxSlider({
+      minSlides: 1,
+      maxSlides: 6,
+      slideWidth: 178,
+      slideMargin: 20,
+      pager: false,
+      nextText: '',
+      prevText: '',
+      moveSlides: 1,
+      infiniteLoop: false,
+      hideControlOnEnd: true
+    });
+  }
+});
+</script>
+{/if}

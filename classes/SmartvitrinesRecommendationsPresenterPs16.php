@@ -312,13 +312,29 @@ final class SmartvitrinesRecommendationsPresenterPs16
             }
 
             $idProductAttribute = (int) Product::getDefaultAttribute($productId);
-            $raw = Product::getProductProperties($langId, [
+            $row = [
                 'id_product' => $productId,
                 'id_product_attribute' => $idProductAttribute > 0 ? $idProductAttribute : null,
                 'out_of_stock' => (int) $product->out_of_stock,
-            ]);
+                'id_category_default' => (int) $product->id_category_default,
+                'link_rewrite' => (string) $product->link_rewrite,
+                'ean13' => (string) $product->ean13,
+                'name' => (string) $product->name,
+                'description_short' => (string) $product->description_short,
+            ];
+            $raw = Product::getProductProperties($langId, $row, $this->context);
             if (!is_array($raw) || empty($raw['id_product'])) {
                 continue;
+            }
+
+            if (empty($raw['name'])) {
+                $raw['name'] = (string) $product->name;
+            }
+            if (empty($raw['link_rewrite'])) {
+                $raw['link_rewrite'] = (string) $product->link_rewrite;
+            }
+            if (empty($raw['description_short'])) {
+                $raw['description_short'] = (string) $product->description_short;
             }
 
             $quantity = (int) StockAvailable::getQuantityAvailableByProduct(

@@ -6,10 +6,15 @@ require dirname(__DIR__, 3) . '/config/config.inc.php';
 
 $pk = getenv('SV_PUBLIC_KEY') ?: '';
 $sk = getenv('SV_SECRET_KEY') ?: '';
-$apiUrl = getenv('SV_API_URL') ?: 'http://local_env:18080';
+$apiUrl = getenv('SV_API_URL') ?: '';
 
 if ($pk === '' || $sk === '') {
     fwrite(STDERR, "SV_PUBLIC_KEY and SV_SECRET_KEY required\n");
+    exit(1);
+}
+
+if ($apiUrl === '') {
+    fwrite(STDERR, "SV_API_URL required (ex.: http://localhost:18080)\n");
     exit(1);
 }
 

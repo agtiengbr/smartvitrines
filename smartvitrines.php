@@ -31,10 +31,10 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.3.0';
+        $this->version = '1.4.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
-        $this->bootstrap = true;
+        $this->bootstrap = version_compare(_PS_VERSION_, '1.7.0.0', '>=');
         $this->ps_versions_compliancy = ['min' => '1.6.0.0', 'max' => '9.99.99'];
 
         parent::__construct();
@@ -551,7 +551,7 @@ class smartvitrines extends Module
                 'type' => 'text',
                 'label' => $this->l('API URL'),
                 'name' => self::CONFIG_API_URL,
-                'desc' => $this->l('Base da API SmartVitrines. Vazio = produção. Dev Docker: http://local_env:18080'),
+                'desc' => $this->l('Base da API SmartVitrines (ex.: https://api.analytics.agti.eng.br). Deixe vazio para usar o endpoint de produção padrão.'),
             ],
             [
                 'type' => 'select',
@@ -640,6 +640,9 @@ class smartvitrines extends Module
         $helper->submit_action = 'submitSmartvitrinesConfig';
         $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name;
         $helper->token = Tools::getAdminTokenLite('AdminModules');
+        if (!version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            $helper->module = $this->name;
+        }
 
         $helper->fields_value = [
             self::CONFIG_PUBLIC_KEY => Configuration::get(self::CONFIG_PUBLIC_KEY),

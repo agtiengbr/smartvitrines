@@ -27,12 +27,16 @@ final class SmartvitrinesOrderExporter
 
         $items = [];
         foreach ($order->getProducts() as $row) {
-            $product = new Product((int) $row['product_id']);
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $product = new Product((int) ($row['product_id'] ?? $row['id_product'] ?? 0));
             if (!Validate::isLoadedObject($product)) {
                 continue;
             }
 
-            $sku = $this->resolveSku($product);
+            $sku = $this->resolveSku($row, $product);
             if ($sku === '') {
                 continue;
             }
@@ -65,15 +69,53 @@ final class SmartvitrinesOrderExporter
         ];
     }
 
-    private function resolveSku(Product $product)
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function resolveSku(array $row, Product $product)
     {
         switch ($this->skuField) {
             case 'ean13':
-                return (string) ($product->ean13 ?: $product->reference);
+                $sku = trim((string) ($row['product_ean13'] ?? $product->ean13 ?? ''));
+                if ($sku !== '') {
+                    return $sku;
+                }
+
+                return $this->resolveReferenceSku($row, $product);
             case 'upc':
-                return (string) ($product->upc ?: $product->reference);
+                $sku = trim((string) ($row['product_upc'] ?? $product->upc ?? ''));
+                if ($sku !== '') {
+                    return $sku;
+                }
+
+                return $this->resolveReferenceSku($row, $product);
             default:
-                return (string) $product->reference;
+                return $this->resolveReferenceSku($row, $product);
         }
+    }
+
+    /**
+     * Lojas sem reference no produto pai usam id da combinação (mesmo padrão do feed aggoogleshopping).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function resolveReferenceSku(array $row, Product $product)
+    {
+        $reference = trim((string) ($row['product_reference'] ?? $product->reference ?? ''));
+        if ($reference !== '') {
+            return $reference;
+        }
+
+        $attributeId = (int) ($row['product_attribute_id'] ?? 0);
+        if ($attributeId > 0) {
+            return (string) $attributeId;
+        }
+
+        $defaultAttr = (int) Product::getDefaultAttribute((int) $product->id);
+        if ($defaultAttr > 0) {
+            return (string) $defaultAttr;
+        }
+
+        return (string) $product->id;
     }
 }

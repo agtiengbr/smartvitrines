@@ -15,7 +15,7 @@ Compatível com **PrestaShop 1.6.x a 9** e **PHP 7.1+** (recomendado PHP 7.4+ em
 3. Preencha:
    - **Public Key** — `pk_live_...` (CLI `sv:tenant:create`)
    - **Secret Key** — mesma `sk_live_...` do tenant
-   - **API URL** — vazio para produção; dev Docker/WSL: `http://local_env:18080` (requer `extra_hosts: local_env:host-gateway` no container da loja)
+   - **API URL** — vazio para produção; dev: URL acessível do container PHP (ex.: `http://host.docker.internal:18080`)
    - **Campo SKU** — alinhado ao tenant (`reference`, `ean13`, `upc`)
    - **Layout das recomendações** — `Hummingbird` ou `Classic` (switch no BO)
    - **Limite na PDP** — quantidade na página do produto (default **4**)
