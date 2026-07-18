@@ -2,7 +2,7 @@
 <module>
     <name>smartvitrines</name>
     <displayName><![CDATA[SmartVitrines]]></displayName>
-    <version><![CDATA[1.6.0]]></version>
+    <version><![CDATA[1.6.1]]></version>
     <description><![CDATA[Recomendações comportamentais — SDK, conversão e endpoint de pedido.]]></description>
     <author><![CDATA[SmartVitrines]]></author>
     <tab><![CDATA[analytics_stats]]></tab>
