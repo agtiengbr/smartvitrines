@@ -30,6 +30,7 @@ $module = Module::getInstanceByName('smartvitrines');
 if ($module) {
     $module->registerHook('productFooter');
     $module->registerHook('shoppingCartExtra');
+    $module->registerHook('actionBeforeCartUpdateQty');
 }
 
 if (method_exists('Tools', 'clearCache')) {

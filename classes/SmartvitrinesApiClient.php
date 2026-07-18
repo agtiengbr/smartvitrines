@@ -66,14 +66,42 @@ final class SmartvitrinesApiClient
 
     public function postConversion($publicKey, $sessionId, $orderRef)
     {
-        $url = rtrim($this->apiBaseUrl, '/') . '/v1/events/conversion';
-
-        $payload = json_encode([
+        return $this->postJson('/v1/events/conversion', [
             'public_key' => (string) $publicKey,
             'session_id' => (string) $sessionId,
             'order_ref' => (string) $orderRef,
         ]);
-        if ($payload === false) {
+    }
+
+    /**
+     * @param string      $publicKey
+     * @param string      $sessionId
+     * @param string      $sku
+     * @param string|null $visitorUid
+     */
+    public function postAddToCart($publicKey, $sessionId, $sku, $visitorUid = null)
+    {
+        $payload = [
+            'public_key' => (string) $publicKey,
+            'session_id' => (string) $sessionId,
+            'sku' => (string) $sku,
+        ];
+        if ($visitorUid !== null && $visitorUid !== '') {
+            $payload['visitor_uid'] = (string) $visitorUid;
+        }
+
+        return $this->postJson('/v1/events/add-to-cart', $payload);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function postJson($path, array $payload)
+    {
+        $url = rtrim($this->apiBaseUrl, '/') . (string) $path;
+
+        $body = json_encode($payload);
+        if ($body === false) {
             return false;
         }
 
@@ -86,7 +114,7 @@ final class SmartvitrinesApiClient
             curl_setopt_array($ch, [
                 CURLOPT_POST => true,
                 CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_POSTFIELDS => $body,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 5,
             ]);
@@ -102,7 +130,7 @@ final class SmartvitrinesApiClient
             'http' => [
                 'method' => 'POST',
                 'header' => "Content-Type: application/json\r\nAccept: application/json\r\n",
-                'content' => $payload,
+                'content' => $body,
                 'timeout' => 5,
                 'ignore_errors' => true,
             ],

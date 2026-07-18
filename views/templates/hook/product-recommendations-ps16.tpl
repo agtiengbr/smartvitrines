@@ -10,7 +10,8 @@
         {foreach from=$smartvitrines_products item=product name=smartvitrines_list}
           {if $product.available_for_order && !isset($restricted_country_mode)}
             {assign var='svProductLink' value=$product.link|default:$link->getProductLink($product.id_product, $product.link_rewrite, $product.category)}
-            <li class="item product-box ajax_block_product{if $smarty.foreach.smartvitrines_list.first} first_item{elseif $smarty.foreach.smartvitrines_list.last} last_item{else} item{/if} product_accessories_description">
+            {assign var='svProductSku' value=$smartvitrines_sku_map[$product.id_product]|default:''}
+            <li class="item product-box ajax_block_product{if $smarty.foreach.smartvitrines_list.first} first_item{elseif $smarty.foreach.smartvitrines_list.last} last_item{else} item{/if} product_accessories_description"{if $svProductSku != ''} data-sv-sku="{$svProductSku|escape:'html':'UTF-8'}" data-id-product="{$product.id_product|intval}"{/if}>
               <div class="product_desc">
                 <a href="{$svProductLink|escape:'html':'UTF-8'}" title="{$product.legend|escape:'html':'UTF-8'}" class="product-image product_image">
                   <img class="lazyOwl" src="{$link->getImageLink($product.link_rewrite, $product.id_image, 'home_default')|escape:'html':'UTF-8'}" alt="{$product.legend|escape:'html':'UTF-8'}" width="{$homeSize.width|default:125}" height="{$homeSize.height|default:125}"/>

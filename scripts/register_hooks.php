@@ -33,9 +33,11 @@ $register = ['displayOrderConfirmation', 'displayHeader'];
 if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
     $register[] = 'displayFooterProduct';
     $register[] = 'displayShoppingCart';
+    $register[] = 'actionCartUpdateQuantityBefore';
 } else {
     $register[] = 'productFooter';
     $register[] = 'shoppingCartExtra';
+    $register[] = 'actionBeforeCartUpdateQty';
 }
 
 $unregister = ['actionValidateOrder'];

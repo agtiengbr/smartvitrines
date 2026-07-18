@@ -4,6 +4,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/SmartvitrinesProductSkuResolver.php';
+
 final class SmartvitrinesOrderExporter
 {
     /** @var string */
@@ -36,7 +38,7 @@ final class SmartvitrinesOrderExporter
                 continue;
             }
 
-            $sku = $this->resolveSku($row, $product);
+            $sku = SmartvitrinesProductSkuResolver::extractSkuFromOrderRow($this->skuField, $row, $product);
             if ($sku === '') {
                 continue;
             }
@@ -60,62 +62,20 @@ final class SmartvitrinesOrderExporter
         }
 
         $date = $order->date_add ?? date('Y-m-d H:i:s');
+        $orderCurrency = new Currency((int) $order->id_currency);
+        $shopDefaultCurrency = new Currency((int) Configuration::get('PS_CURRENCY_DEFAULT'));
+        $orderConversionRate = (float) ($order->conversion_rate ?? 0);
 
         return [
             'id_pedido' => (string) $order->id,
             'data' => (new DateTimeImmutable($date))->format(DATE_ATOM),
+            // O pedido guarda a taxa moeda-da-loja → moeda-do-pedido; invertemos
+            // para entregar ao backend a taxa moeda-do-pedido → moeda padrão da loja.
+            'currency' => (string) $orderCurrency->iso_code,
+            'shop_default_currency' => (string) $shopDefaultCurrency->iso_code,
+            'conversion_rate_to_shop_default' => $orderConversionRate > 0 ? 1 / $orderConversionRate : null,
             'total' => (float) $order->total_paid_tax_incl,
             'items' => $items,
         ];
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function resolveSku(array $row, Product $product)
-    {
-        switch ($this->skuField) {
-            case 'ean13':
-                $sku = trim((string) ($row['product_ean13'] ?? $product->ean13 ?? ''));
-                if ($sku !== '') {
-                    return $sku;
-                }
-
-                return $this->resolveReferenceSku($row, $product);
-            case 'upc':
-                $sku = trim((string) ($row['product_upc'] ?? $product->upc ?? ''));
-                if ($sku !== '') {
-                    return $sku;
-                }
-
-                return $this->resolveReferenceSku($row, $product);
-            default:
-                return $this->resolveReferenceSku($row, $product);
-        }
-    }
-
-    /**
-     * Lojas sem reference no produto pai usam id da combinação (mesmo padrão do feed aggoogleshopping).
-     *
-     * @param array<string, mixed> $row
-     */
-    private function resolveReferenceSku(array $row, Product $product)
-    {
-        $reference = trim((string) ($row['product_reference'] ?? $product->reference ?? ''));
-        if ($reference !== '') {
-            return $reference;
-        }
-
-        $attributeId = (int) ($row['product_attribute_id'] ?? 0);
-        if ($attributeId > 0) {
-            return (string) $attributeId;
-        }
-
-        $defaultAttr = (int) Product::getDefaultAttribute((int) $product->id);
-        if ($defaultAttr > 0) {
-            return (string) $defaultAttr;
-        }
-
-        return (string) $product->id;
     }
 }

@@ -4,6 +4,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/classes/SmartvitrinesProductSkuResolver.php';
 require_once dirname(__FILE__) . '/classes/SmartvitrinesOrderExporter.php';
 require_once dirname(__FILE__) . '/classes/SmartvitrinesApiClient.php';
 if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
@@ -31,7 +32,7 @@ class smartvitrines extends Module
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.4.2';
+        $this->version = '1.6.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = version_compare(_PS_VERSION_, '1.7.0.0', '>=');
@@ -56,6 +57,7 @@ class smartvitrines extends Module
             && Configuration::updateValue(self::CONFIG_CART_LIMIT, (string) self::DEFAULT_CART_LIMIT)
             && $this->registerHook('displayHeader')
             && $this->registerRecommendationHooks()
+            && $this->registerAddToCartHooks()
             && $this->registerHook('displayOrderConfirmation');
     }
 
@@ -191,9 +193,10 @@ class smartvitrines extends Module
         $this->smarty->assign([
             'smartvitrines_products' => $result['products'],
             'smartvitrines_title' => $result['title'],
+            'smartvitrines_sku_map' => $result['sku_map'],
         ]);
 
-        return $html . $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+        return $html . $this->renderRecommendationsBlock($result);
     }
 
     /**
@@ -257,9 +260,28 @@ class smartvitrines extends Module
         $this->smarty->assign([
             'smartvitrines_products' => $result['products'],
             'smartvitrines_title' => $result['title'],
+            'smartvitrines_sku_map' => $result['sku_map'],
         ]);
 
-        return $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+        return $this->renderRecommendationsBlock($result);
+    }
+
+    /**
+     * @param array{title: string, products: list<array<string, mixed>>, sku_map: array<string, string>} $result
+     */
+    private function renderRecommendationsBlock(array $result)
+    {
+        $html = $this->display(__FILE__, $this->getRecommendationsTemplatePath());
+
+        if ($result['sku_map'] === []) {
+            return $html;
+        }
+
+        $this->smarty->assign([
+            'smartvitrines_sku_map' => $result['sku_map'],
+        ]);
+
+        return $html . $this->display(__FILE__, 'views/templates/hook/recommendations-click-track.tpl');
     }
 
     /**
@@ -311,14 +333,7 @@ class smartvitrines extends Module
      */
     private function resolveCartLineSku(array $row, $skuField)
     {
-        if ($skuField === 'ean13') {
-            return trim((string) ($row['ean13'] ?? ''));
-        }
-        if ($skuField === 'upc') {
-            return trim((string) ($row['upc'] ?? ''));
-        }
-
-        return $this->resolveProductSku($row, 'reference');
+        return SmartvitrinesProductSkuResolver::extractSku((string) $skuField, $row);
     }
 
     /**
@@ -326,40 +341,11 @@ class smartvitrines extends Module
      */
     private function resolveProductSku($product, $skuField)
     {
-        switch ($skuField) {
-            case 'ean13':
-                return trim((string) ($product['ean13'] ?? ''));
-            case 'upc':
-                return trim((string) ($product['upc'] ?? ''));
-            default:
-                $reference = (string) ($product['reference_to_display'] ?? $product['reference'] ?? '');
-                $reference = trim($reference);
-                if ($reference !== '') {
-                    return $reference;
-                }
-
-                return $this->resolveFallbackProductSku($product);
-        }
-    }
-
-    /**
-     * Lojas sem reference no produto pai usam id da combinação default (mesmo padrão do feed aggoogleshopping).
-     *
-     * @param array<string, mixed>|\ArrayAccess<string, mixed> $product
-     */
-    private function resolveFallbackProductSku($product)
-    {
-        $idProduct = (int) ($product['id_product'] ?? 0);
-        if ($idProduct <= 0) {
+        if (!is_array($product)) {
             return '';
         }
 
-        $defaultAttr = (int) Product::getDefaultAttribute($idProduct);
-        if ($defaultAttr > 0) {
-            return (string) $defaultAttr;
-        }
-
-        return (string) $idProduct;
+        return SmartvitrinesProductSkuResolver::extractSku((string) $skuField, $product);
     }
 
     private function getRecommendationsTemplatePath()
@@ -387,6 +373,117 @@ class smartvitrines extends Module
     }
 
     /**
+     * PS 1.6: actionBeforeCartUpdateQty; PS ≥ 1.7: actionCartUpdateQuantityBefore
+     * (mesmo call site em Cart::updateQty). Idempotente (upgrade / re-registro).
+     */
+    public function registerAddToCartHooks()
+    {
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '>=')) {
+            return $this->registerHook('actionCartUpdateQuantityBefore');
+        }
+
+        return $this->registerHook('actionBeforeCartUpdateQty');
+    }
+
+    /**
+     * PS ≥ 1.7 — quantidade no carrinho antes do update.
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookActionCartUpdateQuantityBefore($params)
+    {
+        $this->trackAddToCartFromQtyHook($params);
+    }
+
+    /**
+     * PS 1.6 — quantidade no carrinho antes do update.
+     *
+     * @param array<string, mixed> $params
+     */
+    public function hookActionBeforeCartUpdateQty($params)
+    {
+        $this->trackAddToCartFromQtyHook($params);
+    }
+
+    /**
+     * Emite product_add_to_cart na API quando operator === up.
+     *
+     * @param array<string, mixed> $params
+     */
+    private function trackAddToCartFromQtyHook($params)
+    {
+        if (!is_array($params)) {
+            return;
+        }
+
+        if (($params['operator'] ?? '') !== 'up' || (int) ($params['quantity'] ?? 0) <= 0) {
+            return;
+        }
+
+        $publicKey = (string) Configuration::get(self::CONFIG_PUBLIC_KEY);
+        if ($publicKey === '') {
+            return;
+        }
+
+        $sessionId = $this->resolveSdkSessionId();
+        if ($sessionId === null) {
+            return;
+        }
+
+        $sku = $this->resolveSkuFromCartQtyParams($params);
+        if ($sku === '') {
+            return;
+        }
+
+        $client = new SmartvitrinesApiClient($this->getApiBaseUrl());
+        $client->postAddToCart($publicKey, $sessionId, $sku, $this->resolveSdkVisitorUid());
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function resolveSkuFromCartQtyParams(array $params)
+    {
+        $product = $params['product'] ?? null;
+        if (!$product instanceof Product) {
+            return '';
+        }
+
+        $idProduct = (int) $product->id;
+        if ($idProduct <= 0) {
+            return '';
+        }
+
+        $idProductAttribute = (int) ($params['id_product_attribute'] ?? 0);
+        $row = [
+            'id_product' => $idProduct,
+            'id_product_attribute' => $idProductAttribute,
+            'reference' => (string) $product->reference,
+            'ean13' => (string) $product->ean13,
+            'upc' => (string) $product->upc,
+        ];
+
+        if ($idProductAttribute > 0) {
+            $combination = new Combination($idProductAttribute);
+            if (Validate::isLoadedObject($combination)) {
+                if ((string) $combination->reference !== '') {
+                    $row['reference'] = (string) $combination->reference;
+                }
+                if ((string) $combination->ean13 !== '') {
+                    $row['ean13'] = (string) $combination->ean13;
+                }
+                if ((string) $combination->upc !== '') {
+                    $row['upc'] = (string) $combination->upc;
+                }
+            }
+        }
+
+        $skuField = (string) (Configuration::get(self::CONFIG_SKU_FIELD) ?: 'reference');
+
+        return SmartvitrinesProductSkuResolver::extractSku($skuField, $row);
+    }
+
+    /**
      * @return SmartvitrinesRecommendationsPresenter|SmartvitrinesRecommendationsPresenterPs16
      */
     private function createRecommendationsPresenter()
@@ -406,8 +503,12 @@ class smartvitrines extends Module
     private function normalizeHookProduct($product)
     {
         if ($product instanceof Product) {
+            $idProduct = (int) $product->id;
+            $defaultAttr = (int) Product::getDefaultAttribute($idProduct);
+
             return [
-                'id_product' => (int) $product->id,
+                'id_product' => $idProduct,
+                'id_product_attribute' => $defaultAttr > 0 ? $defaultAttr : 0,
                 'reference' => (string) $product->reference,
                 'reference_to_display' => (string) $product->reference,
                 'ean13' => (string) $product->ean13,
@@ -418,6 +519,7 @@ class smartvitrines extends Module
         if (is_array($product) || $product instanceof \ArrayAccess) {
             return [
                 'id_product' => (int) ($product['id_product'] ?? $product['id'] ?? 0),
+                'id_product_attribute' => (int) ($product['id_product_attribute'] ?? $product['product_attribute_id'] ?? 0),
                 'reference' => (string) ($product['reference'] ?? ''),
                 'reference_to_display' => (string) ($product['reference_to_display'] ?? $product['reference'] ?? ''),
                 'ean13' => (string) ($product['ean13'] ?? ''),
@@ -468,16 +570,34 @@ class smartvitrines extends Module
      */
     private function resolveSdkSessionId()
     {
-        $sessionId = isset($_COOKIE['sv_session_id']) ? trim((string) $_COOKIE['sv_session_id']) : '';
-        if ($sessionId === '') {
+        return $this->resolveSdkUuidCookie('sv_session_id');
+    }
+
+    /**
+     * visitor_uid do SDK (cookie sv_visitor_uid) para eventos server-side.
+     *
+     * @return string|null
+     */
+    private function resolveSdkVisitorUid()
+    {
+        return $this->resolveSdkUuidCookie('sv_visitor_uid');
+    }
+
+    /**
+     * @return string|null
+     */
+    private function resolveSdkUuidCookie($cookieName)
+    {
+        $value = isset($_COOKIE[$cookieName]) ? trim((string) $_COOKIE[$cookieName]) : '';
+        if ($value === '') {
             return null;
         }
 
-        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $sessionId)) {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value)) {
             return null;
         }
 
-        return $sessionId;
+        return $value;
     }
 
     /**
@@ -594,17 +714,25 @@ class smartvitrines extends Module
             ],
             [
                 'type' => 'select',
-                'label' => $this->l('Campo SKU'),
+                'label' => $this->l('Identificador do Produto'),
                 'name' => self::CONFIG_SKU_FIELD,
                 'options' => [
                     'query' => [
                         ['id' => 'reference', 'name' => $this->l('Referência (reference)')],
+                        ['id' => 'id', 'name' => $this->l('ID')],
                         ['id' => 'ean13', 'name' => $this->l('EAN-13')],
                         ['id' => 'upc', 'name' => $this->l('UPC')],
                     ],
                     'id' => 'id',
                     'name' => 'name',
                 ],
+            ],
+            [
+                'type' => 'html',
+                'name' => 'smartvitrines_sku_id_hint',
+                'html_content' => '<div class="alert alert-info">'
+                    . $this->l('Ao escolher ID, o valor enviado à API deve ser o mesmo g:id do feed XML do Google Shopping.')
+                    . '</div>',
             ],
         ];
 
