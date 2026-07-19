@@ -28,11 +28,14 @@ class smartvitrines extends Module
     public const DEFAULT_CART_LIMIT = 4;
     public const BO_LIMIT_MAX = 100;
 
+    /** @var string|null pageview_id gerado uma vez por render (SSR). */
+    private $requestPageviewId = null;
+
     public function __construct()
     {
         $this->name = 'smartvitrines';
         $this->tab = 'analytics_stats';
-        $this->version = '1.6.1';
+        $this->version = '1.7.0';
         $this->author = 'SmartVitrines';
         $this->need_instance = 0;
         $this->bootstrap = version_compare(_PS_VERSION_, '1.7.0.0', '>=');
@@ -118,6 +121,7 @@ class smartvitrines extends Module
         $this->context->smarty->assign([
             'smartvitrines_script_url' => $scriptUrl,
             'smartvitrines_public_key' => $publicKey,
+            'smartvitrines_pageview_id' => $this->getRequestPageviewId(),
         ]);
 
         return $this->display(__FILE__, 'views/templates/hook/header.tpl');
@@ -183,7 +187,8 @@ class smartvitrines extends Module
             $product,
             $this->l('Você também pode se interessar por:'),
             $this->getConfiguredLimit(self::CONFIG_PDP_LIMIT),
-            $sessionId
+            $sessionId,
+            $this->getRequestPageviewId()
         );
 
         if ($result['products'] === []) {
@@ -250,7 +255,8 @@ class smartvitrines extends Module
             $this->collectCartProductIds($cart),
             $this->l('Complete sua compra com:'),
             $this->getConfiguredLimit(self::CONFIG_CART_LIMIT),
-            $sessionId
+            $sessionId,
+            $this->getRequestPageviewId()
         );
 
         if ($result['products'] === []) {
@@ -435,8 +441,11 @@ class smartvitrines extends Module
             return;
         }
 
+        // pageview_id da página atual (cookie escrito pelo SDK no init); sem ele, um novo por request.
+        $pageviewId = $this->resolveSdkPageviewId() ?? $this->generateUuidV4();
+
         $client = new SmartvitrinesApiClient($this->getApiBaseUrl());
-        $client->postAddToCart($publicKey, $sessionId, $sku, $this->resolveSdkVisitorUid());
+        $client->postAddToCart($publicKey, $sessionId, $pageviewId, $sku, $this->resolveSdkVisitorUid());
     }
 
     /**
@@ -581,6 +590,45 @@ class smartvitrines extends Module
     private function resolveSdkVisitorUid()
     {
         return $this->resolveSdkUuidCookie('sv_visitor_uid');
+    }
+
+    /**
+     * pageview_id do SDK (cookie sv_pageview_id) da carga atual, para ATC server-side.
+     *
+     * @return string|null
+     */
+    private function resolveSdkPageviewId()
+    {
+        return $this->resolveSdkUuidCookie('sv_pageview_id');
+    }
+
+    /**
+     * pageview_id gerado uma vez por render (SSR): partilhado por header (SDK init) e recomendações
+     * server-side, garantindo que serve e interações da mesma página compartilhem o ID.
+     *
+     * @return string
+     */
+    private function getRequestPageviewId()
+    {
+        if ($this->requestPageviewId === null) {
+            $this->requestPageviewId = $this->generateUuidV4();
+        }
+
+        return $this->requestPageviewId;
+    }
+
+    /**
+     * @return string
+     */
+    private function generateUuidV4()
+    {
+        $bytes = function_exists('random_bytes')
+            ? random_bytes(16)
+            : pack('N4', mt_rand(), mt_rand(), mt_rand(), mt_rand());
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
     }
 
     /**

@@ -12,6 +12,8 @@
 })(window, document, 'script', '{$smartvitrines_script_url|escape:'javascript'}');
 
 SmartVitrines.init({
-  publicKey: '{$smartvitrines_public_key|escape:'javascript'}'
+  publicKey: '{$smartvitrines_public_key|escape:'javascript'}',
+  pageviewId: '{$smartvitrines_pageview_id|escape:'javascript'}',
+  autoTrackPageView: true
 });
 </script>

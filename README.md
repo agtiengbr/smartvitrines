@@ -4,14 +4,11 @@ Compatível com **PrestaShop 1.6.x a 9** e **PHP 7.1+** (recomendado PHP 7.4+ em
 
 ## Instalação
 
-1. Baixe o módulo deste repositório e copie para `modules/` da loja:
+1. Copie a pasta `smartvitrines` para `modules/` da loja:
 
    ```bash
-   git clone https://github.com/agtiengbr/smartvitrines.git /tmp/smartvitrines-module
-   cp -r /tmp/smartvitrines-module /caminho/da/loja/modules/smartvitrines
+   cp -r prestashop/modules/smartvitrines /caminho/da/loja/modules/
    ```
-
-   Ou baixe o ZIP na [página de Releases](https://github.com/agtiengbr/smartvitrines/releases).
 
 2. No back-office: **Módulos → SmartVitrines → Configurar**
 
