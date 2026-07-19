@@ -21,7 +21,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
      *
      * @return array{title: string, products: list<array<string, mixed>>, sku_map: array<string, string>}
      */
-    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title, $limit, $sessionId = null)
+    public function present($publicKey, $apiBaseUrl, $skuField, $product, $title, $limit, $sessionId = null, $pageviewId = null)
     {
         $empty = ['title' => (string) $title, 'products' => [], 'sku_map' => []];
         $product = $this->normalizeProduct($product);
@@ -31,7 +31,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
         $sku = $this->extractSku((string) $skuField, $product);
 
         $client = new SmartvitrinesApiClient($apiBaseUrl);
-        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit, $sessionId);
+        $recommendedSkus = $client->getRecommendations((string) $publicKey, $sku, $displayLimit, $sessionId, $pageviewId);
         if ($recommendedSkus === []) {
             return $empty;
         }
@@ -63,7 +63,7 @@ final class SmartvitrinesRecommendationsPresenterPs16
      *
      * @return array{title: string, products: list<array<string, mixed>>, sku_map: array<string, string>}
      */
-    public function presentForSkus($publicKey, $apiBaseUrl, $skuField, array $originSkus, array $excludeProductIds, $title, $limit, $sessionId = null)
+    public function presentForSkus($publicKey, $apiBaseUrl, $skuField, array $originSkus, array $excludeProductIds, $title, $limit, $sessionId = null, $pageviewId = null)
     {
         $empty = ['title' => (string) $title, 'products' => [], 'sku_map' => []];
         $originSkus = $this->normalizeSkuList($originSkus);
@@ -77,7 +77,8 @@ final class SmartvitrinesRecommendationsPresenterPs16
             (string) $publicKey,
             implode(',', $originSkus),
             $displayLimit,
-            $sessionId
+            $sessionId,
+            $pageviewId
         );
         if ($recommendedSkus === []) {
             return $empty;

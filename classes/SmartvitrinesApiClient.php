@@ -17,7 +17,7 @@ final class SmartvitrinesApiClient
     /**
      * @return list<string>
      */
-    public function getRecommendations($publicKey, $sku, $limit, $sessionId = null)
+    public function getRecommendations($publicKey, $sku, $limit, $sessionId = null, $pageviewId = null)
     {
         $publicKey = (string) $publicKey;
         $sku = (string) $sku;
@@ -35,6 +35,10 @@ final class SmartvitrinesApiClient
         }
         if ($sessionId !== null && $sessionId !== '') {
             $query['session_id'] = (string) $sessionId;
+        }
+        // pageview_id habilita a gravação do serve por pageview (Conversão Gerada).
+        if ($pageviewId !== null && $pageviewId !== '') {
+            $query['pageview_id'] = (string) $pageviewId;
         }
 
         $url = rtrim($this->apiBaseUrl, '/') . '/v1/recommendations?' . http_build_query($query);
@@ -76,14 +80,16 @@ final class SmartvitrinesApiClient
     /**
      * @param string      $publicKey
      * @param string      $sessionId
+     * @param string      $pageviewId
      * @param string      $sku
      * @param string|null $visitorUid
      */
-    public function postAddToCart($publicKey, $sessionId, $sku, $visitorUid = null)
+    public function postAddToCart($publicKey, $sessionId, $pageviewId, $sku, $visitorUid = null)
     {
         $payload = [
             'public_key' => (string) $publicKey,
             'session_id' => (string) $sessionId,
+            'pageview_id' => (string) $pageviewId,
             'sku' => (string) $sku,
         ];
         if ($visitorUid !== null && $visitorUid !== '') {
