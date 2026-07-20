@@ -153,9 +153,12 @@ final class SmartvitrinesProductSkuResolver
             return 0;
         }
 
-        $id = (int) Product::getIdByReference($sku);
-        if ($id > 0) {
-            return $id;
+        // Product::getIdByReference() só existe a partir do PS 1.7 — no 1.6 usamos SQL abaixo.
+        if (method_exists('Product', 'getIdByReference')) {
+            $id = (int) Product::getIdByReference($sku);
+            if ($id > 0) {
+                return $id;
+            }
         }
 
         $id = self::resolveProductIdByProductReference($sku);

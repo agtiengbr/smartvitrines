@@ -4,10 +4,11 @@ Compatível com **PrestaShop 1.6.x a 9** e **PHP 7.1+** (recomendado PHP 7.4+ em
 
 ## Instalação
 
-1. Copie a pasta `smartvitrines` para `modules/` da loja:
+1. Baixe o ZIP na [página de Releases](https://github.com/agtiengbr/smartvitrines/releases) ou clone este repositório e copie para `modules/smartvitrines` da loja:
 
    ```bash
-   cp -r prestashop/modules/smartvitrines /caminho/da/loja/modules/
+   git clone https://github.com/agtiengbr/smartvitrines.git /tmp/smartvitrines-module
+   cp -r /tmp/smartvitrines-module /caminho/da/loja/modules/smartvitrines
    ```
 
 2. No back-office: **Módulos → SmartVitrines → Configurar**
@@ -136,6 +137,19 @@ Opções úteis: `--no-until-negligible`, `--dry-run`, `--batch-size=100`.
 
 
 ## Changelog
+
+### 1.7.1
+
+- Restaura o fix PS 1.6: `Product::getIdByReference` só via `method_exists` (regredido por engano na 1.7.0)
+
+### 1.7.0
+
+- `pageview_id` SSR + SDK `autoTrackPageView` (Conversão Gerada)
+- Recomendações e ATC server-side enviam `pageview_id`
+
+### 1.6.1
+
+- Correção PS 1.6: não chamar `Product::getIdByReference` (método inexistente)
 
 ### 1.6.0
 
